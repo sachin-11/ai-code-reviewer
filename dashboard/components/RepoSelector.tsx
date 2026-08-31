@@ -1,31 +1,36 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import type { ChangeEvent } from "react";
 
-export function RepoSelector({ initialRepo }: { initialRepo: string }) {
+export function RepoSelector({ repos, initialRepo }: { repos: string[]; initialRepo: string }) {
   const router = useRouter();
-  const [value, setValue] = useState(initialRepo);
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    router.push(`/?repo=${encodeURIComponent(trimmed)}`);
+  function handleChange(e: ChangeEvent<HTMLSelectElement>) {
+    const repo = e.target.value;
+    if (repo) {
+      router.push(`/?repo=${encodeURIComponent(repo)}`);
+    }
+  }
+
+  if (repos.length === 0) {
+    return <p className="text-sm text-ink-muted">No reviewed repositories yet.</p>;
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-2">
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="owner/repo"
-        className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-series-1"
-      />
-      <button type="submit" className="rounded-md bg-series-1 px-3 py-1.5 text-sm font-medium text-white">
-        View
-      </button>
-    </form>
+    <select
+      value={initialRepo}
+      onChange={handleChange}
+      className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-primary focus:outline-none focus:ring-1 focus:ring-series-1"
+    >
+      <option value="" disabled>
+        Select a repository
+      </option>
+      {repos.map((repo) => (
+        <option key={repo} value={repo}>
+          {repo}
+        </option>
+      ))}
+    </select>
   );
 }

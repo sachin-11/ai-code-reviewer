@@ -5,6 +5,11 @@ from service import reviews_repo
 router = APIRouter(prefix="/api/reviews")
 
 
+@router.get("/repos")
+async def list_repos():
+    return {"repos": reviews_repo.get_known_repos()}
+
+
 @router.get("")
 async def list_reviews(repo: str = Query(...), limit: int = Query(default=20, le=100)):
     return {"reviews": reviews_repo.get_review_history(repo, limit)}
