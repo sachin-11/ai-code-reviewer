@@ -1,19 +1,60 @@
 import logging
+import os
+
+from agent.graph import build_graph
+from agent.nodes.conversation import handle_comment
+from agent.schemas import AgentState
+from service.workspace import cleanup_workspace, clone_workspace
 
 logger = logging.getLogger(__name__)
 
 
 def handle_review_pr(payload: dict) -> None:
-    print(f"[worker] review_pr job received for PR #{payload.get('pr_number')} in {payload.get('repo_full_name')}")
-    print("[worker] TODO: wire into the ReAct agent loop (next module)")
+    repo_full_name = payload["repo_full_name"]
+    head_sha = payload["head_sha"]
+
+    # Safe because RQ's default Worker processes one job at a time per
+    # process; agent.github_client reads routing/auth from process env vars
+    # (carried over from its original CI-script design), so this only needs
+    # to be correct for the duration of this job.
+    os.environ["REPO_FULL_NAME"] = repo_full_name
+
+    github_token = os.environ["GITHUB_TOKEN"]
+    workspace = clone_workspace(repo_full_name, head_sha, github_token)
+
+    try:
+        state = AgentState(
+            pr_number=payload["pr_number"],
+            head_sha=head_sha,
+            base_sha=payload["base_sha"],
+            head_branch=payload["head_branch"],
+            base_branch=payload["base_branch"],
+            repo_full_name=repo_full_name,
+            workspace=workspace,
+        )
+        build_graph().invoke(state)
+    finally:
+        cleanup_workspace(workspace)
 
 
 def handle_conversation(payload: dict) -> None:
-    print(
-        f"[worker] handle_conversation job received for comment {payload.get('comment_id')} "
-        f"in {payload.get('repo_full_name')}"
-    )
-    print("[worker] TODO: wire into the ReAct agent loop (next module)")
+    repo_full_name = payload["repo_full_name"]
+    head_sha = payload["head_sha"]
+
+    os.environ["REPO_FULL_NAME"] = repo_full_name
+
+    github_token = os.environ["GITHUB_TOKEN"]
+    workspace = clone_workspace(repo_full_name, head_sha, github_token)
+
+    try:
+        handle_comment(
+            comment_id=payload["comment_id"],
+            comment_author=payload["comment_author"],
+            pr_number=payload["pr_number"],
+            workspace=workspace,
+        )
+    finally:
+        cleanup_workspace(workspace)
 
 
 JOB_HANDLERS = {

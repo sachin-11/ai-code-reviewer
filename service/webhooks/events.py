@@ -33,10 +33,12 @@ def parse_review_comment_event(payload: dict) -> Optional[dict]:
     pr = payload.get("pull_request") or {}
     repo = payload.get("repository") or {}
     user = comment.get("user") or {}
+    head = pr.get("head") or {}
 
     return {
         "pr_number": pr.get("number"),
         "comment_id": comment.get("id"),
         "comment_author": user.get("login"),
         "repo_full_name": repo.get("full_name"),
+        "head_sha": head.get("sha"),
     }

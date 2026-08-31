@@ -1,12 +1,27 @@
 import os
+import sys
 
+from dotenv import load_dotenv
 from redis import Redis
 from rq import Queue, Worker
 
 from service.queue.redis_queue import DEFAULT_QUEUE_NAME
 
+load_dotenv()
+
+REQUIRED_ENV_VARS = ["OPENAI_API_KEY", "GITHUB_TOKEN"]
+
+
+def _check_env_vars() -> None:
+    missing = [name for name in REQUIRED_ENV_VARS if not os.environ.get(name)]
+    if missing:
+        print(f"Missing required environment variable(s): {', '.join(missing)}", file=sys.stderr)
+        sys.exit(1)
+
 
 def main() -> None:
+    _check_env_vars()
+
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     conn = Redis.from_url(redis_url)
     queue = Queue(DEFAULT_QUEUE_NAME, connection=conn)
