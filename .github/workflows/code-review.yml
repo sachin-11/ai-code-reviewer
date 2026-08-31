@@ -1,0 +1,86 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: "review-${{ github.event.pull_request.number }}"
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: agent/requirements.txt
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "**/package-lock.json"
+
+      - name: Install agent dependencies
+        run: pip install -r agent/requirements.txt
+
+      - name: Detect repo language
+        id: detect_lang
+        run: |
+          lang=$(python agent/tools/detect_lang.py)
+          echo "lang=$lang" >> "$GITHUB_OUTPUT"
+
+      - name: Install target repo Python dependencies
+        if: steps.detect_lang.outputs.lang == 'python' || steps.detect_lang.outputs.lang == 'mixed'
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          if [ -f pyproject.toml ]; then
+            pip install .
+          fi
+
+      - name: Install target repo Node dependencies
+        if: steps.detect_lang.outputs.lang == 'typescript' || steps.detect_lang.outputs.lang == 'mixed'
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          fi
+
+      - name: Run AI code review
+        run: python -m agent.main
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          REPO_FULL_NAME: ${{ github.repository }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          WORKSPACE: ${{ github.workspace }}
+
+      - name: Upload review output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-output
+          path: .review_output/
+          retention-days: 7
+          if-no-files-found: ignore
