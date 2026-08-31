@@ -1,4 +1,4 @@
-import { getCostSummary, getReviewHistory, getReviewStats } from "@/lib/api";
+import { getCostSummary, getKnownRepos, getReviewHistory, getReviewStats } from "@/lib/api";
 import { RepoSelector } from "@/components/RepoSelector";
 import { ReviewHistoryTable } from "@/components/ReviewHistoryTable";
 import { StatTile } from "@/components/StatTile";
@@ -19,15 +19,20 @@ export default async function DashboardPage({
   const resolvedSearchParams = await searchParams;
   const repo = resolvedSearchParams.repo?.trim() ?? "";
 
+  let repos: string[] = [];
+  try {
+    repos = (await getKnownRepos()).repos;
+  } catch {
+    repos = [];
+  }
+
   if (!repo) {
     return (
       <main className="mx-auto max-w-5xl px-6 py-10">
         <h1 className="text-xl font-semibold text-ink-primary">AI Code Reviewer Dashboard</h1>
-        <p className="mt-2 text-sm text-ink-secondary">
-          Enter a repository (owner/repo) to see its review history.
-        </p>
+        <p className="mt-2 text-sm text-ink-secondary">Select a repository to see its review history.</p>
         <div className="mt-4">
-          <RepoSelector initialRepo="" />
+          <RepoSelector repos={repos} initialRepo="" />
         </div>
       </main>
     );
@@ -55,7 +60,7 @@ export default async function DashboardPage({
           <h1 className="text-xl font-semibold text-ink-primary">AI Code Reviewer Dashboard</h1>
           <p className="mt-1 text-sm text-ink-secondary">{repo}</p>
         </div>
-        <RepoSelector initialRepo={repo} />
+        <RepoSelector repos={repos} initialRepo={repo} />
       </div>
 
       {loadError || !history || !stats || !cost ? (

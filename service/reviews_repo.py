@@ -63,6 +63,13 @@ def record_review(
     return review_id
 
 
+def get_known_repos() -> list[str]:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT repo_full_name FROM reviews ORDER BY repo_full_name")
+            return [row["repo_full_name"] for row in cur.fetchall()]
+
+
 def get_review_history(repo_full_name: str, limit: int = 20) -> list[dict]:
     with get_connection() as conn:
         with conn.cursor() as cur:
