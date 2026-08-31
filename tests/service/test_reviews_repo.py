@@ -85,3 +85,48 @@ def test_eval_quality_summary_with_no_samples_has_no_rate(postgres_conn):
     init_schema()
     summary = reviews_repo.get_eval_quality_summary("org/no-eval-samples-xyz")
     assert summary == {"sample_count": 0, "total_judged": 0, "valid_rate": None}
+
+
+def test_latency_summary_aggregates_across_reviews(postgres_conn):
+    init_schema()
+
+    with postgres_conn.cursor() as cur:
+        cur.execute("DELETE FROM reviews WHERE repo_full_name = %s", (TEST_REPO,))
+    postgres_conn.commit()
+
+    reviews_repo.record_review(
+        TEST_REPO, 1, "h1", "b1", [], 0, None, None,
+        latency_seconds=10.0, iteration_count=2, hit_max_iterations=False,
+        node_latencies={"fetch": 1.0, "analyze": 8.0},
+    )
+    reviews_repo.record_review(
+        TEST_REPO, 2, "h2", "b2", [], 0, None, None,
+        latency_seconds=30.0, iteration_count=6, hit_max_iterations=True,
+        node_latencies={"fetch": 1.0, "analyze": 28.0},
+    )
+
+    summary = reviews_repo.get_latency_summary(TEST_REPO)
+    assert summary["review_count"] == 2
+    assert abs(summary["avg_latency_seconds"] - 20.0) < 1e-9
+    assert abs(summary["max_latency_seconds"] - 30.0) < 1e-9
+    assert abs(summary["avg_iteration_count"] - 4.0) < 1e-9
+    assert summary["max_iteration_count"] == 6
+    assert summary["hit_max_iterations_count"] == 1
+    assert abs(summary["hit_max_iterations_rate"] - 0.5) < 1e-9
+
+    history = reviews_repo.get_review_history(TEST_REPO)
+    by_pr = {r["pr_number"]: r for r in history}
+    assert by_pr[1]["node_latencies"] == {"fetch": 1.0, "analyze": 8.0}
+    assert by_pr[2]["hit_max_iterations"] is True
+
+    with postgres_conn.cursor() as cur:
+        cur.execute("DELETE FROM reviews WHERE repo_full_name = %s", (TEST_REPO,))
+    postgres_conn.commit()
+
+
+def test_latency_summary_with_no_reviews_has_no_rate(postgres_conn):
+    init_schema()
+    summary = reviews_repo.get_latency_summary("org/no-latency-data-xyz")
+    assert summary["review_count"] == 0
+    assert summary["avg_latency_seconds"] is None
+    assert summary["hit_max_iterations_rate"] is None

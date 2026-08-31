@@ -92,8 +92,11 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
     issues_raw: list[dict] = []
     fixed_indexes: list[int] = []
     cost_usd = 0.0
+    iteration_count = 0
+    hit_max_iterations = False
 
     for _ in range(MAX_ITERATIONS):
+        iteration_count += 1
         try:
             response = client.chat.completions.create(
                 model=MODEL,
@@ -104,7 +107,12 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
         except Exception as exc:
             print(f"[agentic_analyze] LLM call failed: {exc}")
             return state.model_copy(
-                update={"issues": [], "patches": [], "cost_usd": state.cost_usd + cost_usd}
+                update={
+                    "issues": [],
+                    "patches": [],
+                    "cost_usd": state.cost_usd + cost_usd,
+                    "iteration_count": iteration_count,
+                }
             )
 
         cost_usd += cost_from_response(MODEL, response)
@@ -146,6 +154,7 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
                 }
             )
     else:
+        hit_max_iterations = True
         print(f"[agentic_analyze] hit max iterations ({MAX_ITERATIONS}) without a final answer")
 
     all_issues: list[Issue] = []
@@ -185,8 +194,17 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
     if skipped:
         print(f"[agentic_analyze] skipped {skipped} previously-dismissed issue(s)")
 
-    print(f"[agentic_analyze] {len(issues)} issue(s), {len(patches)} staged patch(es), ${cost_usd:.4f}")
+    print(
+        f"[agentic_analyze] {len(issues)} issue(s), {len(patches)} staged patch(es), "
+        f"${cost_usd:.4f}, {iteration_count} iteration(s)"
+    )
 
     return state.model_copy(
-        update={"issues": issues, "patches": patches, "cost_usd": state.cost_usd + cost_usd}
+        update={
+            "issues": issues,
+            "patches": patches,
+            "cost_usd": state.cost_usd + cost_usd,
+            "iteration_count": iteration_count,
+            "hit_max_iterations": hit_max_iterations,
+        }
     )

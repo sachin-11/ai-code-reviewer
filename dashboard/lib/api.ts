@@ -14,6 +14,10 @@ export interface Review {
   summary: string | null;
   cost_usd: number;
   trace_url: string | null;
+  latency_seconds: number | null;
+  iteration_count: number | null;
+  hit_max_iterations: boolean;
+  node_latencies: Record<string, number> | null;
   created_at: string;
   severity_breakdown: Partial<Record<Severity, number>>;
 }
@@ -34,6 +38,16 @@ export interface EvalQualitySummary {
   sample_count: number;
   total_judged: number;
   valid_rate: number | null;
+}
+
+export interface LatencySummary {
+  review_count: number;
+  avg_latency_seconds: number | null;
+  max_latency_seconds: number | null;
+  avg_iteration_count: number | null;
+  max_iteration_count: number | null;
+  hit_max_iterations_count: number;
+  hit_max_iterations_rate: number | null;
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -62,4 +76,8 @@ export function getKnownRepos(): Promise<{ repos: string[] }> {
 
 export function getEvalSummary(repo: string): Promise<EvalQualitySummary> {
   return fetchJson(`/api/reviews/eval?repo=${encodeURIComponent(repo)}`);
+}
+
+export function getLatencySummary(repo: string): Promise<LatencySummary> {
+  return fetchJson(`/api/reviews/latency?repo=${encodeURIComponent(repo)}`);
 }

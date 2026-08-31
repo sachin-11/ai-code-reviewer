@@ -14,6 +14,18 @@ function formatCost(v: number): string {
   return `$${v.toFixed(4)}`;
 }
 
+function formatLatency(v: number | null): string {
+  if (v === null) return "—";
+  return v < 60 ? `${v.toFixed(1)}s` : `${(v / 60).toFixed(1)}m`;
+}
+
+function nodeLatencyTitle(nodeLatencies: Record<string, number> | null): string | undefined {
+  if (!nodeLatencies || Object.keys(nodeLatencies).length === 0) return undefined;
+  return Object.entries(nodeLatencies)
+    .map(([node, seconds]) => `${node}: ${seconds.toFixed(1)}s`)
+    .join("\n");
+}
+
 function LinkPill({ href, label }: { href: string; label: string }) {
   return (
     <a
@@ -53,6 +65,7 @@ export function ReviewHistoryTable({ reviews }: { reviews: Review[] }) {
               Verified fixes
             </th>
             <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide">Cost</th>
+            <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide">Latency</th>
             <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide">Links</th>
           </tr>
         </thead>
@@ -78,6 +91,20 @@ export function ReviewHistoryTable({ reviews }: { reviews: Review[] }) {
               </td>
               <td className="tabular px-4 py-3 text-right text-ink-primary">
                 {formatCost(review.cost_usd)}
+              </td>
+              <td
+                className="tabular px-4 py-3 text-right text-ink-primary"
+                title={nodeLatencyTitle(review.node_latencies)}
+              >
+                <div className="flex items-center justify-end gap-1.5">
+                  {review.hit_max_iterations && (
+                    <span
+                      className="inline-block h-1.5 w-1.5 rounded-full bg-status-critical"
+                      title={`Hit loop limit after ${review.iteration_count ?? "?"} iterations`}
+                    />
+                  )}
+                  <span>{formatLatency(review.latency_seconds)}</span>
+                </div>
               </td>
               <td className="px-4 py-3">
                 <div className="flex flex-wrap gap-1.5">
