@@ -25,6 +25,9 @@ SUMMARY_MARKER = "<!-- ai-code-reviewer:summary -->"
 MIN_COMMENT_CONFIDENCE = 0.6
 POST_DELAY_SECONDS = 0.5
 
+FIX_COMMIT_NAME = "ai-code-reviewer[bot]"
+FIX_COMMIT_EMAIL = "ai-code-reviewer[bot]@users.noreply.github.com"
+
 
 def get_client() -> Github:
     token = os.environ["GITHUB_TOKEN"]
@@ -191,6 +194,25 @@ def raise_fix_pr(
         )
     except subprocess.CalledProcessError as exc:
         logger.error("Failed to create branch %s: %s", branch_name, exc.stderr)
+        return None
+
+    try:
+        subprocess.run(
+            ["git", "config", "user.email", FIX_COMMIT_EMAIL],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", FIX_COMMIT_NAME],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        logger.error("Failed to configure git identity: %s", exc.stderr)
         return None
 
     applied_any = False

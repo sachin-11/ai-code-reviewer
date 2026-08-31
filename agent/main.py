@@ -2,8 +2,12 @@ import os
 import sys
 import traceback
 
+from dotenv import load_dotenv
+
 from agent.graph import build_graph
 from agent.schemas import AgentState
+
+load_dotenv()
 
 REQUIRED_ENV_VARS = [
     "OPENAI_API_KEY",
