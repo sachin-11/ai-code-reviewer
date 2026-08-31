@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 from redis import Redis
@@ -8,7 +9,11 @@ from rq import Queue, Worker
 from service.db import init_schema
 from service.queue.redis_queue import DEFAULT_QUEUE_NAME
 
+# Repo-root .env (OPENAI_API_KEY, GITHUB_TOKEN, ...) plus service/.env
+# (REDIS_URL, DATABASE_URL) -- load_dotenv() with no path only finds the
+# former when run from the repo root.
 load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 REQUIRED_ENV_VARS = ["OPENAI_API_KEY", "GITHUB_TOKEN"]
 
