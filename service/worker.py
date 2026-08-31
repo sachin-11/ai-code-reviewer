@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from redis import Redis
 from rq import Queue, Worker
 
+from service.db import init_schema
 from service.queue.redis_queue import DEFAULT_QUEUE_NAME
 
 load_dotenv()
@@ -21,6 +22,11 @@ def _check_env_vars() -> None:
 
 def main() -> None:
     _check_env_vars()
+
+    try:
+        init_schema()
+    except Exception as exc:
+        print(f"[worker] failed to initialize database schema: {exc}", file=sys.stderr)
 
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     conn = Redis.from_url(redis_url)

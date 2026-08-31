@@ -1,12 +1,52 @@
 import logging
 import os
 
+from agent.fingerprint import fingerprint as compute_fingerprint
 from agent.graph import build_graph
 from agent.nodes.conversation import handle_comment
 from agent.schemas import AgentState
+from service import reviews_repo
 from service.workspace import cleanup_workspace, clone_workspace
 
 logger = logging.getLogger(__name__)
+
+
+def _extract(result, key: str):
+    return result[key] if isinstance(result, dict) else getattr(result, key)
+
+
+def _record_review_history(payload: dict, final_state) -> None:
+    try:
+        issues = _extract(final_state, "issues")
+        verified_patches = _extract(final_state, "verified_patches")
+        fix_pr_url = _extract(final_state, "fix_pr_url")
+
+        verified_count = sum(1 for p in verified_patches if p.verified)
+        issue_dicts = [
+            {
+                "fingerprint": compute_fingerprint(issue.file, issue.category.value, issue.title),
+                "file": issue.file,
+                "category": issue.category.value,
+                "severity": issue.severity.value,
+                "title": issue.title,
+                "confidence": issue.confidence,
+                "fixable": issue.fixable,
+            }
+            for issue in issues
+        ]
+
+        reviews_repo.record_review(
+            payload["repo_full_name"],
+            payload["pr_number"],
+            payload["head_sha"],
+            payload["base_sha"],
+            issue_dicts,
+            verified_count,
+            fix_pr_url,
+            summary=None,
+        )
+    except Exception as exc:
+        logger.error("Failed to record review history: %s", exc)
 
 
 def handle_review_pr(payload: dict) -> None:
@@ -32,7 +72,8 @@ def handle_review_pr(payload: dict) -> None:
             repo_full_name=repo_full_name,
             workspace=workspace,
         )
-        build_graph().invoke(state)
+        final_state = build_graph().invoke(state)
+        _record_review_history(payload, final_state)
     finally:
         cleanup_workspace(workspace)
 
