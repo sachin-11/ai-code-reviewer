@@ -30,6 +30,12 @@ export interface FalsePositiveStats {
   false_positive_rate: number;
 }
 
+export interface EvalQualitySummary {
+  sample_count: number;
+  total_judged: number;
+  valid_rate: number | null;
+}
+
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, { cache: "no-store" });
   if (!res.ok) {
@@ -52,4 +58,8 @@ export function getCostSummary(repo: string): Promise<CostSummary> {
 
 export function getKnownRepos(): Promise<{ repos: string[] }> {
   return fetchJson(`/api/reviews/repos`);
+}
+
+export function getEvalSummary(repo: string): Promise<EvalQualitySummary> {
+  return fetchJson(`/api/reviews/eval?repo=${encodeURIComponent(repo)}`);
 }

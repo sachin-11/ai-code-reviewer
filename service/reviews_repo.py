@@ -1,5 +1,7 @@
 from typing import Optional
 
+from psycopg.types.json import Jsonb
+
 from service.db import get_connection
 
 
@@ -130,6 +132,42 @@ def get_false_positive_rate(repo_full_name: str) -> dict:
     rate = dismissed / total if total else 0.0
 
     return {"total": total, "dismissed": dismissed, "false_positive_rate": rate}
+
+
+def record_eval_sample(review_id: int, issues_judged: int, issues_valid: int, details: dict) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO eval_samples (review_id, issues_judged, issues_valid, details)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (review_id, issues_judged, issues_valid, Jsonb(details)),
+        )
+        conn.commit()
+
+
+def get_eval_quality_summary(repo_full_name: str) -> dict:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*) AS sample_count,
+                       COALESCE(SUM(es.issues_judged), 0) AS total_judged,
+                       COALESCE(SUM(es.issues_valid), 0) AS total_valid
+                FROM eval_samples es
+                JOIN reviews r ON r.id = es.review_id
+                WHERE r.repo_full_name = %s
+                """,
+                (repo_full_name,),
+            )
+            row = cur.fetchone()
+
+    sample_count = row["sample_count"] or 0
+    total_judged = row["total_judged"] or 0
+    total_valid = row["total_valid"] or 0
+    valid_rate = total_valid / total_judged if total_judged else None
+
+    return {"sample_count": sample_count, "total_judged": total_judged, "valid_rate": valid_rate}
 
 
 def get_cost_summary(repo_full_name: str) -> dict:

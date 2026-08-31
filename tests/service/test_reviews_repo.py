@@ -58,3 +58,30 @@ def test_record_review_and_read_back(postgres_conn):
 def test_unknown_repo_returns_empty_history(postgres_conn):
     init_schema()
     assert reviews_repo.get_review_history("org/does-not-exist-xyz") == []
+
+
+def test_eval_samples_aggregate_valid_rate(postgres_conn):
+    init_schema()
+
+    with postgres_conn.cursor() as cur:
+        cur.execute("DELETE FROM reviews WHERE repo_full_name = %s", (TEST_REPO,))
+    postgres_conn.commit()
+
+    review_id = reviews_repo.record_review(TEST_REPO, 1, "h1", "b1", [], 0, None, None)
+
+    reviews_repo.record_eval_sample(review_id, 4, 3, {"results": [{"title": "x", "status": "valid"}]})
+
+    summary = reviews_repo.get_eval_quality_summary(TEST_REPO)
+    assert summary["sample_count"] == 1
+    assert summary["total_judged"] == 4
+    assert abs(summary["valid_rate"] - 0.75) < 1e-9
+
+    with postgres_conn.cursor() as cur:
+        cur.execute("DELETE FROM reviews WHERE repo_full_name = %s", (TEST_REPO,))
+    postgres_conn.commit()
+
+
+def test_eval_quality_summary_with_no_samples_has_no_rate(postgres_conn):
+    init_schema()
+    summary = reviews_repo.get_eval_quality_summary("org/no-eval-samples-xyz")
+    assert summary == {"sample_count": 0, "total_judged": 0, "valid_rate": None}
