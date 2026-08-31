@@ -1,8 +1,11 @@
 import logging
 import os
+import uuid
+from typing import Optional
 
 from agent.fingerprint import fingerprint as compute_fingerprint
 from agent.graph import build_graph
+from agent.llm_client import tracing_enabled
 from agent.nodes.conversation import handle_comment
 from agent.schemas import AgentState
 from service import reviews_repo
@@ -15,7 +18,24 @@ def _extract(result, key: str):
     return result[key] if isinstance(result, dict) else getattr(result, key)
 
 
-def _record_review_history(payload: dict, final_state) -> None:
+def _get_trace_url(run_id: str) -> Optional[str]:
+    # Best-effort: LangSmith flushes traces asynchronously, so the run may
+    # not be readable yet immediately after invoke() returns.
+    if not tracing_enabled():
+        return None
+
+    try:
+        from langsmith import Client
+
+        client = Client()
+        run = client.read_run(run_id)
+        return client.get_run_url(run=run)
+    except Exception as exc:
+        logger.error("Could not fetch LangSmith trace URL for run %s: %s", run_id, exc)
+        return None
+
+
+def _record_review_history(payload: dict, final_state, trace_url: Optional[str]) -> None:
     try:
         issues = _extract(final_state, "issues")
         verified_patches = _extract(final_state, "verified_patches")
@@ -46,6 +66,7 @@ def _record_review_history(payload: dict, final_state) -> None:
             fix_pr_url,
             summary=None,
             cost_usd=cost_usd,
+            trace_url=trace_url,
         )
     except Exception as exc:
         logger.error("Failed to record review history: %s", exc)
@@ -74,8 +95,17 @@ def handle_review_pr(payload: dict) -> None:
             repo_full_name=repo_full_name,
             workspace=workspace,
         )
-        final_state = build_graph().invoke(state)
-        _record_review_history(payload, final_state)
+        run_id = str(uuid.uuid4())
+        final_state = build_graph().invoke(
+            state,
+            config={
+                "run_id": run_id,
+                "tags": ["review_pr"],
+                "metadata": {"repo_full_name": repo_full_name, "pr_number": payload["pr_number"]},
+            },
+        )
+        trace_url = _get_trace_url(run_id)
+        _record_review_history(payload, final_state, trace_url)
     finally:
         cleanup_workspace(workspace)
 

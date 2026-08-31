@@ -13,6 +13,7 @@ def record_review(
     fix_pr_url: Optional[str],
     summary: Optional[str],
     cost_usd: float = 0.0,
+    trace_url: Optional[str] = None,
 ) -> int:
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -20,8 +21,8 @@ def record_review(
                 """
                 INSERT INTO reviews
                     (repo_full_name, pr_number, head_sha, base_sha, issue_count,
-                     verified_patch_count, fix_pr_url, summary, cost_usd)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     verified_patch_count, fix_pr_url, summary, cost_usd, trace_url)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -34,6 +35,7 @@ def record_review(
                     fix_pr_url,
                     summary,
                     cost_usd,
+                    trace_url,
                 ),
             )
             review_id = cur.fetchone()["id"]
@@ -67,7 +69,7 @@ def get_review_history(repo_full_name: str, limit: int = 20) -> list[dict]:
             cur.execute(
                 """
                 SELECT id, repo_full_name, pr_number, head_sha, base_sha, issue_count,
-                       verified_patch_count, fix_pr_url, summary, cost_usd, created_at
+                       verified_patch_count, fix_pr_url, summary, cost_usd, trace_url, created_at
                 FROM reviews
                 WHERE repo_full_name = %s
                 ORDER BY created_at DESC

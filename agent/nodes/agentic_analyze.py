@@ -1,10 +1,8 @@
 import json
-import os
-
-from openai import OpenAI
 
 from agent import github_client, memory_store
 from agent.fingerprint import fingerprint as compute_fingerprint
+from agent.llm_client import get_openai_client
 from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Patch
 from agent.tools.agent_tools import TOOL_SCHEMAS, build_tool_dispatch
@@ -80,7 +78,7 @@ def _load_memory_and_scan_dismissals(pr_number: int) -> dict:
 def agentic_analyze_node(state: AgentState) -> AgentState:
     memory = _load_memory_and_scan_dismissals(state.pr_number)
 
-    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    client = get_openai_client()
     dispatch = build_tool_dispatch(
         state.workspace, state.pr_number, memory["author_notes"], state.repo_full_name
     )

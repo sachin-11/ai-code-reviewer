@@ -1,10 +1,9 @@
 import json
 import os
 
-from openai import OpenAI
-
 from agent import github_client, pinecone_store
 from agent.fingerprint import fingerprint as compute_fingerprint
+from agent.llm_client import get_openai_client
 from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Severity
 
@@ -50,7 +49,7 @@ def _generate_summary(issues: list[Issue], verified_count: int) -> tuple[str, fl
     )
 
     try:
-        client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        client = get_openai_client()
         response = client.chat.completions.create(
             model=MODEL,
             temperature=TEMPERATURE,

@@ -9,12 +9,14 @@ CREATE TABLE IF NOT EXISTS reviews (
     fix_pr_url TEXT,
     summary TEXT,
     cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
+    trace_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Kept alongside the column above so upgrading an existing database (where
--- CREATE TABLE IF NOT EXISTS above is a no-op) still gets the new column.
+-- Kept alongside the columns above so upgrading an existing database (where
+-- CREATE TABLE IF NOT EXISTS above is a no-op) still gets the new columns.
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS trace_url TEXT;
 
 CREATE TABLE IF NOT EXISTS review_issues (
     id SERIAL PRIMARY KEY,

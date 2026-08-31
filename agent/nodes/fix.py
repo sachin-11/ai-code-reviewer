@@ -1,10 +1,10 @@
 import asyncio
 import json
-import os
 from typing import Optional
 
 from openai import AsyncOpenAI
 
+from agent.llm_client import get_async_openai_client
 from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Patch, Severity
 
@@ -86,7 +86,7 @@ async def _generate_patch(
 
 
 async def _fix_async(state: AgentState) -> tuple[list[Patch], float]:
-    client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    client = get_async_openai_client()
 
     candidates = [
         issue

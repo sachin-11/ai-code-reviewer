@@ -1,10 +1,10 @@
 import asyncio
 import json
-import os
 from typing import Optional
 
 from openai import AsyncOpenAI
 
+from agent.llm_client import get_async_openai_client
 from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Severity
 
@@ -121,7 +121,7 @@ async def _run_analyzer(
 
 
 async def _analyze_async(state: AgentState) -> tuple[list[Issue], float]:
-    client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    client = get_async_openai_client()
 
     categories = list(CATEGORY_INSTRUCTIONS.keys())
     results = await asyncio.gather(

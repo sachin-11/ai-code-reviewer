@@ -1,9 +1,7 @@
 import json
-import os
-
-from openai import OpenAI
 
 from agent import github_client, memory_store
+from agent.llm_client import get_openai_client
 from agent.llm_cost import cost_from_response
 
 MODEL = "gpt-4o-mini"
@@ -41,7 +39,7 @@ def _build_user_prompt(finding: dict, reply_text: str, file_content: str) -> str
 
 def _classify_and_respond(finding: dict, reply_text: str, file_content: str) -> dict:
     try:
-        client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        client = get_openai_client()
         response = client.chat.completions.create(
             model=MODEL,
             temperature=TEMPERATURE,
