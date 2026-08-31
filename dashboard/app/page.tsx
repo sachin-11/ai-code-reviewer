@@ -1,8 +1,23 @@
-import { getCostSummary, getEvalSummary, getKnownRepos, getReviewHistory, getReviewStats } from "@/lib/api";
+import {
+  getCostSummary,
+  getEvalSummary,
+  getKnownRepos,
+  getLatencySummary,
+  getReviewHistory,
+  getReviewStats,
+} from "@/lib/api";
 import { RepoSelector } from "@/components/RepoSelector";
 import { ReviewHistoryTable } from "@/components/ReviewHistoryTable";
 import { StatTile } from "@/components/StatTile";
-import { AvgIcon, CostIcon, EvalQualityIcon, FalsePositiveIcon, ReviewsIcon } from "@/components/icons";
+import {
+  AvgIcon,
+  CostIcon,
+  EvalQualityIcon,
+  FalsePositiveIcon,
+  LatencyIcon,
+  LoopLimitIcon,
+  ReviewsIcon,
+} from "@/components/icons";
 
 function formatUsd(v: number): string {
   return `$${v.toFixed(2)}`;
@@ -10,6 +25,11 @@ function formatUsd(v: number): string {
 
 function formatPercent(v: number): string {
   return `${(v * 100).toFixed(1)}%`;
+}
+
+function formatSeconds(v: number | null): string {
+  if (v === null) return "—";
+  return v < 60 ? `${v.toFixed(1)}s` : `${(v / 60).toFixed(1)}m`;
 }
 
 function formatEvalQuality(evalSummary: { sample_count: number; valid_rate: number | null }): string {
@@ -84,14 +104,16 @@ export default async function DashboardPage({
   let stats: Awaited<ReturnType<typeof getReviewStats>> | undefined;
   let cost: Awaited<ReturnType<typeof getCostSummary>> | undefined;
   let evalSummary: Awaited<ReturnType<typeof getEvalSummary>> | undefined;
+  let latency: Awaited<ReturnType<typeof getLatencySummary>> | undefined;
   let loadError: string | null = null;
 
   try {
-    [history, stats, cost, evalSummary] = await Promise.all([
+    [history, stats, cost, evalSummary, latency] = await Promise.all([
       getReviewHistory(repo),
       getReviewStats(repo),
       getCostSummary(repo),
       getEvalSummary(repo),
+      getLatencySummary(repo),
     ]);
   } catch (err) {
     loadError = err instanceof Error ? err.message : "Failed to load dashboard data.";
@@ -101,14 +123,14 @@ export default async function DashboardPage({
     <>
       <Header repos={repos} repo={repo} />
       <main className="mx-auto max-w-5xl px-6 py-8">
-        {loadError || !history || !stats || !cost || !evalSummary ? (
+        {loadError || !history || !stats || !cost || !evalSummary || !latency ? (
           <div className="rounded-xl border border-border bg-surface p-10 text-center">
             <p className="text-sm font-medium text-status-critical">Could not load dashboard data</p>
             <p className="mt-1 text-xs text-ink-muted">{loadError ?? "Unknown error"}</p>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <StatTile label="Reviews" value={String(cost.review_count)} icon={<ReviewsIcon />} />
               <StatTile
                 label="Total cost"
@@ -126,6 +148,29 @@ export default async function DashboardPage({
                 label="Eval quality"
                 value={formatEvalQuality(evalSummary)}
                 icon={<EvalQualityIcon />}
+              />
+              <StatTile
+                label="Avg latency"
+                value={formatSeconds(latency.avg_latency_seconds)}
+                icon={<LatencyIcon />}
+                sparklineValues={history.reviews
+                  .map((r) => r.latency_seconds)
+                  .filter((v): v is number => v !== null)
+                  .reverse()}
+              />
+              <StatTile
+                label="Avg iterations"
+                value={latency.avg_iteration_count === null ? "—" : latency.avg_iteration_count.toFixed(1)}
+                icon={<AvgIcon />}
+              />
+              <StatTile
+                label="Hit loop limit"
+                value={
+                  latency.review_count === 0
+                    ? "—"
+                    : `${latency.hit_max_iterations_count} (${formatPercent(latency.hit_max_iterations_rate ?? 0)})`
+                }
+                icon={<LoopLimitIcon />}
               />
             </div>
 

@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+import time
 import uuid
 from typing import Optional
 
@@ -43,12 +44,45 @@ def _get_trace_url(run_id: str) -> Optional[str]:
         return None
 
 
-def _record_review_history(payload: dict, final_state, trace_url: Optional[str]) -> Optional[int]:
+def _get_node_latencies(run_id: str) -> dict:
+    # Best-effort, same caveat as _get_trace_url: LangSmith flushes
+    # asynchronously, so the child runs may not all be readable yet.
+    # read_run(load_child_runs=True) is deprecated (removal after Jan 2027)
+    # in favor of runs.retrieve(), which has no equivalent one-call
+    # child-tree fetch -- reconstructing it via runs.query() + trace_id
+    # would need a second round trip for no benefit here.
+    if not tracing_enabled():
+        return {}
+
+    try:
+        from langsmith import Client
+
+        client = Client()
+        run = client.read_run(run_id, load_child_runs=True)
+        return {
+            child.name: (child.end_time - child.start_time).total_seconds()
+            for child in (run.child_runs or [])
+            if child.end_time
+        }
+    except Exception as exc:
+        logger.error("Could not fetch LangSmith node latencies for run %s: %s", run_id, exc)
+        return {}
+
+
+def _record_review_history(
+    payload: dict,
+    final_state,
+    trace_url: Optional[str],
+    latency_seconds: float,
+    node_latencies: dict,
+) -> Optional[int]:
     try:
         issues = _extract(final_state, "issues")
         verified_patches = _extract(final_state, "verified_patches")
         fix_pr_url = _extract(final_state, "fix_pr_url")
         cost_usd = _extract(final_state, "cost_usd")
+        iteration_count = _extract(final_state, "iteration_count")
+        hit_max_iterations = _extract(final_state, "hit_max_iterations")
 
         verified_count = sum(1 for p in verified_patches if p.verified)
         issue_dicts = [
@@ -75,6 +109,10 @@ def _record_review_history(payload: dict, final_state, trace_url: Optional[str])
             summary=None,
             cost_usd=cost_usd,
             trace_url=trace_url,
+            latency_seconds=latency_seconds,
+            iteration_count=iteration_count,
+            hit_max_iterations=hit_max_iterations,
+            node_latencies=node_latencies,
         )
     except Exception as exc:
         logger.error("Failed to record review history: %s", exc)
@@ -123,6 +161,7 @@ def handle_review_pr(payload: dict) -> None:
             workspace=workspace,
         )
         run_id = str(uuid.uuid4())
+        started_at = time.time()
         final_state = build_graph().invoke(
             state,
             config={
@@ -131,8 +170,12 @@ def handle_review_pr(payload: dict) -> None:
                 "metadata": {"repo_full_name": repo_full_name, "pr_number": payload["pr_number"]},
             },
         )
+        latency_seconds = time.time() - started_at
         trace_url = _get_trace_url(run_id)
-        review_id = _record_review_history(payload, final_state, trace_url)
+        node_latencies = _get_node_latencies(run_id)
+        review_id = _record_review_history(
+            payload, final_state, trace_url, latency_seconds, node_latencies
+        )
         _maybe_sample_for_eval(review_id, _extract(final_state, "diff"), _extract(final_state, "issues"))
     finally:
         cleanup_workspace(workspace)

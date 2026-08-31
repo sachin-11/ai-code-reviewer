@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS reviews (
     summary TEXT,
     cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
     trace_url TEXT,
+    latency_seconds DOUBLE PRECISION,
+    iteration_count INTEGER,
+    hit_max_iterations BOOLEAN NOT NULL DEFAULT FALSE,
+    node_latencies JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -17,6 +21,10 @@ CREATE TABLE IF NOT EXISTS reviews (
 -- CREATE TABLE IF NOT EXISTS above is a no-op) still gets the new columns.
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS trace_url TEXT;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS latency_seconds DOUBLE PRECISION;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS iteration_count INTEGER;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS hit_max_iterations BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS node_latencies JSONB;
 
 CREATE TABLE IF NOT EXISTS review_issues (
     id SERIAL PRIMARY KEY,

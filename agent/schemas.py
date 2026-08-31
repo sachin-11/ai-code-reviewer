@@ -67,3 +67,5 @@ class AgentState(BaseModel):
     repo_full_name: str = ""
     workspace: str = ""
     cost_usd: float = 0.0
+    iteration_count: int = 0
+    hit_max_iterations: bool = False
