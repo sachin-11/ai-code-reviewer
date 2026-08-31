@@ -3,8 +3,11 @@ import os
 
 from openai import OpenAI
 
+from agent import memory_store
+from agent.fingerprint import fingerprint as compute_fingerprint
 from agent.schemas import AgentState, Issue, Patch
 from agent.tools.agent_tools import TOOL_SCHEMAS, build_tool_dispatch
+from agent import github_client
 
 MODEL = "gpt-4o"
 TEMPERATURE = 0.1
@@ -14,8 +17,11 @@ SYSTEM_PROMPT = (
     "You are a senior security-focused code reviewer investigating a pull "
     "request diff. You have tools to search the codebase for similar "
     "patterns, read files, run tests, check past similar bugs, look up "
-    "known CVEs, stage fixes, and post comments. Use them as needed before "
-    "concluding.\n\n"
+    "known CVEs, check this file's owner and their past dismissal notes, "
+    "stage fixes, and post comments. Use them as needed before concluding. "
+    "If check_author_style shows the owner has repeatedly dismissed a "
+    "category of finding, weigh that when deciding whether to report a "
+    "similar one again.\n\n"
     "When you are done investigating, respond with ONLY a JSON object (no "
     "tool calls, no markdown) of the form:\n"
     '{"issues": [{"file": ..., "line_start": ..., "line_end": ..., '
@@ -54,9 +60,27 @@ def _parse_final_response(content: str) -> tuple[list[dict], list[int]]:
     return issues, fixed_indexes
 
 
+def _load_memory_and_scan_dismissals(pr_number: int) -> dict:
+    memory = memory_store.load_memory()
+
+    try:
+        repo = github_client.get_repo()
+        pr = repo.get_pull(pr_number)
+        new_dismissals = memory_store.scan_for_new_dismissals(pr, memory)
+        if new_dismissals:
+            print(f"[agentic_analyze] recorded {new_dismissals} new dismissal(s) from reactions")
+            memory_store.save_memory(memory)
+    except Exception as exc:
+        print(f"[agentic_analyze] could not scan for dismissals: {exc}")
+
+    return memory
+
+
 def agentic_analyze_node(state: AgentState) -> AgentState:
+    memory = _load_memory_and_scan_dismissals(state.pr_number)
+
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    dispatch = build_tool_dispatch(state.workspace, state.pr_number)
+    dispatch = build_tool_dispatch(state.workspace, state.pr_number, memory["author_notes"])
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -119,18 +143,18 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
     else:
         print(f"[agentic_analyze] hit max iterations ({MAX_ITERATIONS}) without a final answer")
 
-    issues: list[Issue] = []
+    all_issues: list[Issue] = []
     for item in issues_raw:
         try:
-            issues.append(Issue(**item))
+            all_issues.append(Issue(**item))
         except Exception:
             continue
 
     patches: list[Patch] = []
     for idx in fixed_indexes:
-        if not isinstance(idx, int) or idx < 0 or idx >= len(issues):
+        if not isinstance(idx, int) or idx < 0 or idx >= len(all_issues):
             continue
-        issue = issues[idx]
+        issue = all_issues[idx]
         staged = staged_fixes.get(issue.file)
         if not staged:
             continue
@@ -143,6 +167,18 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
                 commit_message=f"fix: {issue.title[:43]}",
             )
         )
+
+    dismissed_fps = set(memory["dismissed_fingerprints"].keys())
+
+    def _is_dismissed(issue: Issue) -> bool:
+        return compute_fingerprint(issue.file, issue.category.value, issue.title) in dismissed_fps
+
+    issues = [issue for issue in all_issues if not _is_dismissed(issue)]
+    patches = [patch for patch in patches if not _is_dismissed(patch.issue)]
+
+    skipped = len(all_issues) - len(issues)
+    if skipped:
+        print(f"[agentic_analyze] skipped {skipped} previously-dismissed issue(s)")
 
     print(f"[agentic_analyze] {len(issues)} issue(s), {len(patches)} staged patch(es)")
 

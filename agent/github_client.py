@@ -7,6 +7,7 @@ from typing import Optional
 from github import Auth, Github
 from github.Repository import Repository
 
+from agent.fingerprint import fingerprint as compute_fingerprint
 from agent.schemas import Issue, Patch, Severity
 
 logger = logging.getLogger(__name__)
@@ -29,9 +30,53 @@ FIX_COMMIT_NAME = "ai-code-reviewer[bot]"
 FIX_COMMIT_EMAIL = "ai-code-reviewer[bot]@users.noreply.github.com"
 
 
+MAX_THREAD_HOPS = 10
+
+
 def get_client() -> Github:
     token = os.environ["GITHUB_TOKEN"]
     return Github(auth=Auth.Token(token))
+
+
+def get_authenticated_login() -> Optional[str]:
+    try:
+        return get_client().get_user().login
+    except Exception as exc:
+        logger.error("Failed to fetch authenticated user login: %s", exc)
+        return None
+
+
+def get_review_comment(comment_id: int, pr_number: int):
+    try:
+        repo = get_repo()
+        pr = repo.get_pull(pr_number)
+        return pr.get_review_comment(comment_id)
+    except Exception as exc:
+        logger.error("Failed to fetch review comment %s: %s", comment_id, exc)
+        return None
+
+
+def get_thread_root(comment, pr_number: int):
+    current = comment
+    hops = 0
+    while current.in_reply_to_id and hops < MAX_THREAD_HOPS:
+        parent = get_review_comment(current.in_reply_to_id, pr_number)
+        if parent is None:
+            return None
+        current = parent
+        hops += 1
+    return current
+
+
+def reply_to_review_comment(pr_number: int, comment_id: int, body: str) -> bool:
+    try:
+        repo = get_repo()
+        pr = repo.get_pull(pr_number)
+        pr.create_review_comment_reply(comment_id, body)
+        return True
+    except Exception as exc:
+        logger.error("Failed to reply to comment %s: %s", comment_id, exc)
+        return False
 
 
 def get_repo() -> Repository:
@@ -82,11 +127,13 @@ def fetch_file_content(filepath: str, workspace: str) -> str:
 
 def _format_issue_comment(issue: Issue) -> str:
     emoji = SEVERITY_EMOJI[issue.severity]
+    fp = compute_fingerprint(issue.file, issue.category.value, issue.title)
     return (
         f"{emoji} **{issue.severity.value.upper()} · {issue.category.value}**\n\n"
         f"**{issue.title}**\n\n"
         f"{issue.description}\n\n"
-        f"**Suggestion:** {issue.suggestion}"
+        f"**Suggestion:** {issue.suggestion}\n\n"
+        f"<!-- ai-review-fp:{fp}|||{issue.file}|||{issue.category.value}|||{issue.title} -->"
     )
 
 

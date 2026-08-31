@@ -139,6 +139,58 @@ def post_comment(body: str, pr_number: int) -> dict:
         return {"posted": False, "error": str(exc)}
 
 
+def check_bug_history(file: str, workspace: str) -> list[dict]:
+    try:
+        result = subprocess.run(
+            ["git", "log", "--follow", "--grep=^fix:", "--format=%H|%aI|%s", "--", file],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return [{"error": str(exc)}]
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+
+    history = []
+    for line in result.stdout.strip().splitlines():
+        parts = line.split("|", 2)
+        if len(parts) != 3:
+            continue
+        sha, date, message = parts
+        history.append({"commit": sha[:10], "date": date, "message": message})
+
+    return history[:10]
+
+
+def check_author_style(file: str, workspace: str, author_notes: dict) -> dict:
+    try:
+        result = subprocess.run(
+            ["git", "log", "--format=%H", "-1", "--", file],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return {"error": str(exc)}
+
+    sha = result.stdout.strip().splitlines()[0] if result.stdout.strip() else None
+    if not sha:
+        return {"owner": None, "notes": None}
+
+    try:
+        repo = github_client.get_repo()
+        commit = repo.get_commit(sha)
+        owner = commit.author.login if commit.author else None
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    return {"owner": owner, "notes": author_notes.get(owner) if owner else None}
+
+
 def apply_fix(file: str, original: str, fixed: str, workspace: str) -> dict:
     # Does not write to disk: only validates the patch applies verbatim and
     # stages it, so the existing verify_node lint/test/restore gate still
@@ -217,6 +269,30 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "check_bug_history",
+            "description": "Look up past commits in this file whose message starts with 'fix:', to see whether this kind of bug was already addressed here before.",
+            "parameters": {
+                "type": "object",
+                "properties": {"file": {"type": "string"}},
+                "required": ["file"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_author_style",
+            "description": "Find the file's most recent editor (GitHub login) and any recorded notes on the kinds of findings they have dismissed before.",
+            "parameters": {
+                "type": "object",
+                "properties": {"file": {"type": "string"}},
+                "required": ["file"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "post_comment",
             "description": "Post a comment on the pull request being reviewed.",
             "parameters": {
@@ -249,13 +325,15 @@ TOOL_SCHEMAS = [
 ]
 
 
-def build_tool_dispatch(workspace: str, pr_number: int) -> dict:
+def build_tool_dispatch(workspace: str, pr_number: int, author_notes: dict) -> dict:
     return {
         "search_codebase": lambda query: search_codebase(query, workspace),
         "read_file": lambda path: read_file(path, workspace),
         "run_tests": lambda file: run_tests(file, workspace),
         "search_similar_bugs": lambda description: search_similar_bugs(description),
         "web_search": lambda query: web_search(query),
+        "check_bug_history": lambda file: check_bug_history(file, workspace),
+        "check_author_style": lambda file: check_author_style(file, workspace, author_notes),
         "post_comment": lambda body: post_comment(body, pr_number),
         "apply_fix": lambda file, original, fixed: apply_fix(file, original, fixed, workspace),
     }
