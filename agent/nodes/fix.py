@@ -8,7 +8,7 @@ from agent.llm_client import get_async_openai_client
 from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Patch, Severity
 
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-4o"
 TEMPERATURE = 0.0
 
 MAX_FILE_CHARS = 6000
