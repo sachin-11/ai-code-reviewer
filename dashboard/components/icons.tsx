@@ -50,6 +50,15 @@ export function FalsePositiveIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function EvalQualityIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" />
+      <path d="M9.5 12l1.8 1.8L15 10" />
+    </svg>
+  );
+}
+
 export function ExternalLinkIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...base({ width: 14, height: 14, strokeWidth: 2, ...props })}>

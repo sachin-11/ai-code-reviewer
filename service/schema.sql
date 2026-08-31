@@ -31,5 +31,15 @@ CREATE TABLE IF NOT EXISTS review_issues (
     dismissed BOOLEAN NOT NULL DEFAULT FALSE
 );
 
+CREATE TABLE IF NOT EXISTS eval_samples (
+    id SERIAL PRIMARY KEY,
+    review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    issues_judged INTEGER NOT NULL DEFAULT 0,
+    issues_valid INTEGER NOT NULL DEFAULT 0,
+    details JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_reviews_repo ON reviews (repo_full_name, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_review_issues_review ON review_issues (review_id);
+CREATE INDEX IF NOT EXISTS idx_eval_samples_review ON eval_samples (review_id);

@@ -1,8 +1,8 @@
-import { getCostSummary, getKnownRepos, getReviewHistory, getReviewStats } from "@/lib/api";
+import { getCostSummary, getEvalSummary, getKnownRepos, getReviewHistory, getReviewStats } from "@/lib/api";
 import { RepoSelector } from "@/components/RepoSelector";
 import { ReviewHistoryTable } from "@/components/ReviewHistoryTable";
 import { StatTile } from "@/components/StatTile";
-import { AvgIcon, CostIcon, FalsePositiveIcon, ReviewsIcon } from "@/components/icons";
+import { AvgIcon, CostIcon, EvalQualityIcon, FalsePositiveIcon, ReviewsIcon } from "@/components/icons";
 
 function formatUsd(v: number): string {
   return `$${v.toFixed(2)}`;
@@ -10,6 +10,13 @@ function formatUsd(v: number): string {
 
 function formatPercent(v: number): string {
   return `${(v * 100).toFixed(1)}%`;
+}
+
+function formatEvalQuality(evalSummary: { sample_count: number; valid_rate: number | null }): string {
+  if (evalSummary.sample_count === 0 || evalSummary.valid_rate === null) {
+    return "—";
+  }
+  return formatPercent(evalSummary.valid_rate);
 }
 
 function Header({ repos, repo }: { repos: string[]; repo: string }) {
@@ -76,13 +83,15 @@ export default async function DashboardPage({
   let history: Awaited<ReturnType<typeof getReviewHistory>> | undefined;
   let stats: Awaited<ReturnType<typeof getReviewStats>> | undefined;
   let cost: Awaited<ReturnType<typeof getCostSummary>> | undefined;
+  let evalSummary: Awaited<ReturnType<typeof getEvalSummary>> | undefined;
   let loadError: string | null = null;
 
   try {
-    [history, stats, cost] = await Promise.all([
+    [history, stats, cost, evalSummary] = await Promise.all([
       getReviewHistory(repo),
       getReviewStats(repo),
       getCostSummary(repo),
+      getEvalSummary(repo),
     ]);
   } catch (err) {
     loadError = err instanceof Error ? err.message : "Failed to load dashboard data.";
@@ -92,14 +101,14 @@ export default async function DashboardPage({
     <>
       <Header repos={repos} repo={repo} />
       <main className="mx-auto max-w-5xl px-6 py-8">
-        {loadError || !history || !stats || !cost ? (
+        {loadError || !history || !stats || !cost || !evalSummary ? (
           <div className="rounded-xl border border-border bg-surface p-10 text-center">
             <p className="text-sm font-medium text-status-critical">Could not load dashboard data</p>
             <p className="mt-1 text-xs text-ink-muted">{loadError ?? "Unknown error"}</p>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <StatTile label="Reviews" value={String(cost.review_count)} icon={<ReviewsIcon />} />
               <StatTile
                 label="Total cost"
@@ -112,6 +121,11 @@ export default async function DashboardPage({
                 label="False positive rate"
                 value={formatPercent(stats.false_positive_rate)}
                 icon={<FalsePositiveIcon />}
+              />
+              <StatTile
+                label="Eval quality"
+                value={formatEvalQuality(evalSummary)}
+                icon={<EvalQualityIcon />}
               />
             </div>
 

@@ -33,6 +33,7 @@ def test_handle_review_pr_cleans_up_workspace_on_success():
     ):
         mock_graph = MagicMock()
         mock_graph.invoke.return_value = {
+            "diff": "d",
             "issues": [],
             "verified_patches": [],
             "fix_pr_url": None,
@@ -72,3 +73,47 @@ def test_handle_review_pr_cleans_up_workspace_even_if_graph_raises():
 
     assert raised is not None
     assert mock_cleanup.call_args[0] == ("/tmp/fake-ws-2",)
+
+
+def test_maybe_sample_skips_when_review_id_is_none():
+    with mock_patch("eval.judge.judge_online_sample") as mock_judge, mock_patch(
+        "service.jobs.reviews_repo.record_eval_sample"
+    ) as mock_record:
+        jobs._maybe_sample_for_eval(None, "diff", [MagicMock()])
+    assert not mock_judge.called
+    assert not mock_record.called
+
+
+def test_maybe_sample_skips_when_no_issues():
+    with mock_patch("eval.judge.judge_online_sample") as mock_judge:
+        jobs._maybe_sample_for_eval(1, "diff", [])
+    assert not mock_judge.called
+
+
+def test_maybe_sample_skips_when_random_draw_misses():
+    with mock_patch("service.jobs.random.random", return_value=0.99), mock_patch(
+        "eval.judge.judge_online_sample"
+    ) as mock_judge:
+        jobs._maybe_sample_for_eval(1, "diff", [MagicMock()])
+    assert not mock_judge.called
+
+
+def test_maybe_sample_judges_and_records_when_sampled():
+    fake_issue = MagicMock()
+    with mock_patch("service.jobs.random.random", return_value=0.0), mock_patch(
+        "eval.judge.judge_online_sample",
+        return_value={"results": [{"status": "valid"}, {"status": "false_positive"}]},
+    ), mock_patch("service.jobs.reviews_repo.record_eval_sample") as mock_record:
+        jobs._maybe_sample_for_eval(42, "the-diff", [fake_issue])
+
+    assert mock_record.call_args[0][0] == 42
+    assert mock_record.call_args[0][1] == 2
+    assert mock_record.call_args[0][2] == 1
+
+
+def test_maybe_sample_judge_failure_does_not_crash():
+    with mock_patch("service.jobs.random.random", return_value=0.0), mock_patch(
+        "eval.judge.judge_online_sample", side_effect=RuntimeError("judge API down")
+    ), mock_patch("service.jobs.reviews_repo.record_eval_sample") as mock_record:
+        jobs._maybe_sample_for_eval(42, "the-diff", [MagicMock()])
+    assert not mock_record.called

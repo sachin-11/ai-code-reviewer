@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 import uuid
 from typing import Optional
 
@@ -12,6 +13,13 @@ from service import reviews_repo
 from service.workspace import cleanup_workspace, clone_workspace
 
 logger = logging.getLogger(__name__)
+
+# Fraction of completed reviews with at least one issue that get sampled for
+# online eval (an LLM judge grades each finding's plausibility against the
+# diff, no ground truth needed). Independent of the offline golden-dataset
+# eval -- this catches drift on real, unscripted PRs the golden dataset
+# doesn't cover.
+ONLINE_EVAL_SAMPLE_RATE = float(os.environ.get("ONLINE_EVAL_SAMPLE_RATE", "0.15"))
 
 
 def _extract(result, key: str):
@@ -35,7 +43,7 @@ def _get_trace_url(run_id: str) -> Optional[str]:
         return None
 
 
-def _record_review_history(payload: dict, final_state, trace_url: Optional[str]) -> None:
+def _record_review_history(payload: dict, final_state, trace_url: Optional[str]) -> Optional[int]:
     try:
         issues = _extract(final_state, "issues")
         verified_patches = _extract(final_state, "verified_patches")
@@ -56,7 +64,7 @@ def _record_review_history(payload: dict, final_state, trace_url: Optional[str])
             for issue in issues
         ]
 
-        reviews_repo.record_review(
+        return reviews_repo.record_review(
             payload["repo_full_name"],
             payload["pr_number"],
             payload["head_sha"],
@@ -70,6 +78,25 @@ def _record_review_history(payload: dict, final_state, trace_url: Optional[str])
         )
     except Exception as exc:
         logger.error("Failed to record review history: %s", exc)
+        return None
+
+
+def _maybe_sample_for_eval(review_id: Optional[int], diff: str, issues: list) -> None:
+    if review_id is None or not issues:
+        return
+    if random.random() > ONLINE_EVAL_SAMPLE_RATE:
+        return
+
+    try:
+        from eval.judge import judge_online_sample
+
+        verdict = judge_online_sample(diff, issues)
+        results = verdict.get("results", [])
+        valid = sum(1 for r in results if r.get("status") == "valid")
+        reviews_repo.record_eval_sample(review_id, len(results), valid, verdict)
+        logger.info("Online eval sampled review %s: %s/%s valid", review_id, valid, len(results))
+    except Exception as exc:
+        logger.error("Online eval sampling failed for review %s: %s", review_id, exc)
 
 
 def handle_review_pr(payload: dict) -> None:
@@ -105,7 +132,8 @@ def handle_review_pr(payload: dict) -> None:
             },
         )
         trace_url = _get_trace_url(run_id)
-        _record_review_history(payload, final_state, trace_url)
+        review_id = _record_review_history(payload, final_state, trace_url)
+        _maybe_sample_for_eval(review_id, _extract(final_state, "diff"), _extract(final_state, "issues"))
     finally:
         cleanup_workspace(workspace)
 

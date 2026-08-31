@@ -23,3 +23,8 @@ async def review_stats(repo: str = Query(...)):
 @router.get("/cost")
 async def review_cost(repo: str = Query(...)):
     return reviews_repo.get_cost_summary(repo)
+
+
+@router.get("/eval")
+async def review_eval(repo: str = Query(...)):
+    return reviews_repo.get_eval_quality_summary(repo)
