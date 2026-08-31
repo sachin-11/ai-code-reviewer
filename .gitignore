@@ -60,3 +60,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Node / Next.js (dashboard/)
+node_modules/
+.next/
+out/
+.env.local
+next-env.d.ts
+*.tsbuildinfo
