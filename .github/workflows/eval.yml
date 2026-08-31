@@ -1,0 +1,31 @@
+name: Offline Eval
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Monday 06:00 UTC -- catches silent quality drift (model swaps,
+    # prompt edits) without spending real API money on every push.
+    - cron: "0 6 * * 1"
+
+jobs:
+  offline-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: agent/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r agent/requirements.txt
+
+      - name: Run offline eval against the golden dataset
+        run: python -m eval.run_offline_eval
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
