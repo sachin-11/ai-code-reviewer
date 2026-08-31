@@ -1,14 +1,22 @@
 import os
+import platform
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 from redis import Redis
-from rq import Queue, Worker
+from rq import Queue, SimpleWorker, Worker
 
 from service.db import init_schema
 from service.queue.redis_queue import DEFAULT_QUEUE_NAME
 
-load_dotenv()
+# load_dotenv() with no path searches from *this file's* directory upward,
+# stopping at the first .env it finds -- since service/.env exists, an
+# unqualified call would find that one and never reach the repo root's,
+# silently dropping OPENAI_API_KEY/GITHUB_TOKEN. Load both by explicit path.
+_SERVICE_DIR = Path(__file__).resolve().parent
+load_dotenv(_SERVICE_DIR.parent / ".env")
+load_dotenv(_SERVICE_DIR / ".env")
 
 REQUIRED_ENV_VARS = ["OPENAI_API_KEY", "GITHUB_TOKEN"]
 
@@ -31,7 +39,11 @@ def main() -> None:
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     conn = Redis.from_url(redis_url)
     queue = Queue(DEFAULT_QUEUE_NAME, connection=conn)
-    worker = Worker([queue], connection=conn)
+
+    # RQ's default Worker forks a child process per job via os.fork(), which
+    # doesn't exist on Windows. SimpleWorker runs jobs in-process instead.
+    worker_class = SimpleWorker if platform.system() == "Windows" else Worker
+    worker = worker_class([queue], connection=conn)
     worker.work()
 
 

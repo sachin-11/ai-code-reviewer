@@ -1,11 +1,21 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 
 from service.db import init_schema
 from service.reviews_router import router as reviews_router
 from service.webhooks.router import router as webhook_router
+
+# load_dotenv() with no path searches from *this file's* directory upward,
+# stopping at the first .env it finds -- since service/.env exists, an
+# unqualified call would find that one and never reach the repo root's,
+# silently dropping OPENAI_API_KEY/GITHUB_TOKEN. Load both by explicit path.
+_SERVICE_DIR = Path(__file__).resolve().parent
+load_dotenv(_SERVICE_DIR.parent / ".env")
+load_dotenv(_SERVICE_DIR / ".env")
 
 logger = logging.getLogger(__name__)
 
