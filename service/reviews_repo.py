@@ -84,7 +84,31 @@ def get_review_history(repo_full_name: str, limit: int = 20) -> list[dict]:
                 """,
                 (repo_full_name, limit),
             )
-            return cur.fetchall()
+            reviews = cur.fetchall()
+
+            if not reviews:
+                return []
+
+            review_ids = [r["id"] for r in reviews]
+            cur.execute(
+                """
+                SELECT review_id, severity, COUNT(*) AS count
+                FROM review_issues
+                WHERE review_id = ANY(%s)
+                GROUP BY review_id, severity
+                """,
+                (review_ids,),
+            )
+            severity_rows = cur.fetchall()
+
+    severity_by_review: dict[int, dict[str, int]] = {}
+    for row in severity_rows:
+        severity_by_review.setdefault(row["review_id"], {})[row["severity"]] = row["count"]
+
+    for review in reviews:
+        review["severity_breakdown"] = severity_by_review.get(review["id"], {})
+
+    return reviews
 
 
 def get_false_positive_rate(repo_full_name: str) -> dict:

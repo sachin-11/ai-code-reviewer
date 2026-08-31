@@ -13,6 +13,12 @@
   --baseline: #c3c2b7;
   --border-ring: rgba(11, 11, 11, 0.1);
   --series-1: #2a78d6;
+
+  /* Status palette (fixed, mode-invariant per the dataviz reference palette) */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
 }
 
 @media (prefers-color-scheme: dark) {

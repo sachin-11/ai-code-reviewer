@@ -18,6 +18,12 @@ const config: Config = {
         series: {
           1: "var(--series-1)",
         },
+        status: {
+          good: "var(--status-good)",
+          warning: "var(--status-warning)",
+          serious: "var(--status-serious)",
+          critical: "var(--status-critical)",
+        },
       },
     },
   },
