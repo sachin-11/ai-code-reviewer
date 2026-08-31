@@ -3,7 +3,8 @@ import os
 
 from openai import OpenAI
 
-from agent import github_client
+from agent import github_client, pinecone_store
+from agent.fingerprint import fingerprint as compute_fingerprint
 from agent.schemas import AgentState, Issue, Severity
 
 MODEL = "gpt-4o-mini"
@@ -75,6 +76,22 @@ def _save_issues(issues: list[Issue], workspace: str) -> None:
         print(f"[publish] failed to save issues.json: {exc}")
 
 
+def _upsert_semantic_memory(state: AgentState, verified_patches: list) -> None:
+    if not pinecone_store.is_enabled():
+        return
+
+    fixed_fps = {
+        compute_fingerprint(p.issue.file, p.issue.category.value, p.issue.title) for p in verified_patches
+    }
+
+    for issue in state.issues:
+        fp = compute_fingerprint(issue.file, issue.category.value, issue.title)
+        outcome = "fixed" if fp in fixed_fps else "reported"
+        pinecone_store.upsert_issue(
+            fp, issue.file, issue.category.value, issue.title, issue.description, outcome, state.repo_full_name
+        )
+
+
 def publish_node(state: AgentState) -> AgentState:
     if not state.issues:
         print("[publish] no issues found, posting clean summary")
@@ -105,6 +122,7 @@ def publish_node(state: AgentState) -> AgentState:
     print("[publish] posting summary comment")
     github_client.post_summary_comment(summary, state.issues, fix_pr_url, state.pr_number)
 
+    _upsert_semantic_memory(state, verified_patches)
     _save_issues(state.issues, state.workspace)
 
     return state.model_copy(update={"fix_pr_url": fix_pr_url})

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from github import GithubException
 
-from agent import github_client
+from agent import github_client, pinecone_store
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,9 @@ def record_dismissal(memory: dict, fp: str, file: str, category: str, title: str
     notes = memory["author_notes"].setdefault(dismissed_by, {"dismiss_counts": {}, "last_updated": None})
     notes["dismiss_counts"][category] = notes["dismiss_counts"].get(category, 0) + 1
     notes["last_updated"] = now
+
+    if pinecone_store.is_enabled():
+        pinecone_store.update_outcome(fp, "dismissed")
 
 
 def parse_marker(body: str):

@@ -18,10 +18,11 @@ SYSTEM_PROMPT = (
     "request diff. You have tools to search the codebase for similar "
     "patterns, read files, run tests, check past similar bugs, look up "
     "known CVEs, check this file's owner and their past dismissal notes, "
-    "stage fixes, and post comments. Use them as needed before concluding. "
-    "If check_author_style shows the owner has repeatedly dismissed a "
-    "category of finding, weigh that when deciding whether to report a "
-    "similar one again.\n\n"
+    "semantically search past issues you've found across PRs (even ones "
+    "worded differently), stage fixes, and post comments. Use them as "
+    "needed before concluding. If check_author_style shows the owner has "
+    "repeatedly dismissed a category of finding, weigh that when deciding "
+    "whether to report a similar one again.\n\n"
     "When you are done investigating, respond with ONLY a JSON object (no "
     "tool calls, no markdown) of the form:\n"
     '{"issues": [{"file": ..., "line_start": ..., "line_end": ..., '
@@ -80,7 +81,9 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
     memory = _load_memory_and_scan_dismissals(state.pr_number)
 
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    dispatch = build_tool_dispatch(state.workspace, state.pr_number, memory["author_notes"])
+    dispatch = build_tool_dispatch(
+        state.workspace, state.pr_number, memory["author_notes"], state.repo_full_name
+    )
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},

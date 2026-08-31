@@ -6,7 +6,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from agent import github_client
+from agent import github_client, pinecone_store
 
 CODE_EXTENSIONS = (".py", ".ts", ".tsx", ".js", ".jsx")
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__"}
@@ -191,6 +191,12 @@ def check_author_style(file: str, workspace: str, author_notes: dict) -> dict:
     return {"owner": owner, "notes": author_notes.get(owner) if owner else None}
 
 
+def search_semantic_memory(query: str, repo_full_name: str) -> list[dict]:
+    if not pinecone_store.is_enabled():
+        return [{"note": "semantic memory not configured (PINECONE_API_KEY unset)"}]
+    return pinecone_store.search_similar_issues(query, repo_full_name=repo_full_name)
+
+
 def apply_fix(file: str, original: str, fixed: str, workspace: str) -> dict:
     # Does not write to disk: only validates the patch applies verbatim and
     # stages it, so the existing verify_node lint/test/restore gate still
@@ -293,6 +299,18 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "search_semantic_memory",
+            "description": "Semantically search past issues this reviewer has found across PRs (via embeddings, not exact keyword match) for ones similar in meaning to a description, along with their outcome (reported/fixed/dismissed).",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "post_comment",
             "description": "Post a comment on the pull request being reviewed.",
             "parameters": {
@@ -325,7 +343,7 @@ TOOL_SCHEMAS = [
 ]
 
 
-def build_tool_dispatch(workspace: str, pr_number: int, author_notes: dict) -> dict:
+def build_tool_dispatch(workspace: str, pr_number: int, author_notes: dict, repo_full_name: str) -> dict:
     return {
         "search_codebase": lambda query: search_codebase(query, workspace),
         "read_file": lambda path: read_file(path, workspace),
@@ -334,6 +352,7 @@ def build_tool_dispatch(workspace: str, pr_number: int, author_notes: dict) -> d
         "web_search": lambda query: web_search(query),
         "check_bug_history": lambda file: check_bug_history(file, workspace),
         "check_author_style": lambda file: check_author_style(file, workspace, author_notes),
+        "search_semantic_memory": lambda query: search_semantic_memory(query, repo_full_name),
         "post_comment": lambda body: post_comment(body, pr_number),
         "apply_fix": lambda file, original, fixed: apply_fix(file, original, fixed, workspace),
     }
