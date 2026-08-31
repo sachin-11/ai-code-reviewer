@@ -1,14 +1,30 @@
 import json
+from functools import lru_cache
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from service.config import get_settings
 from service.queue.base import InMemoryJobQueue
+from service.queue.redis_queue import RedisJobQueue
 from service.webhooks.events import parse_pull_request_event, parse_review_comment_event
 from service.webhooks.signature import verify_signature
 
 router = APIRouter()
-job_queue = InMemoryJobQueue()
+
+
+@lru_cache
+def get_job_queue():
+    settings = get_settings()
+    if settings.redis_url:
+        return RedisJobQueue(settings.redis_url)
+    return InMemoryJobQueue()
+
+
+def _enqueue_or_503(job_type: str, event: dict) -> None:
+    try:
+        get_job_queue().enqueue(job_type, event)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"failed to enqueue job: {exc}")
 
 
 @router.post("/webhook/github")
@@ -33,14 +49,14 @@ async def github_webhook(
     if x_github_event == "pull_request":
         event = parse_pull_request_event(payload)
         if event:
-            job_queue.enqueue("review_pr", event)
+            _enqueue_or_503("review_pr", event)
             return {"status": "queued", "job": "review_pr"}
         return {"status": "ignored"}
 
     if x_github_event == "pull_request_review_comment":
         event = parse_review_comment_event(payload)
         if event:
-            job_queue.enqueue("handle_conversation", event)
+            _enqueue_or_503("handle_conversation", event)
             return {"status": "queued", "job": "handle_conversation"}
         return {"status": "ignored"}
 
