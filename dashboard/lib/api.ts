@@ -1,5 +1,7 @@
 const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:8000";
 
+export type Severity = "critical" | "high" | "medium" | "low";
+
 export interface Review {
   id: number;
   repo_full_name: string;
@@ -13,6 +15,7 @@ export interface Review {
   cost_usd: number;
   trace_url: string | null;
   created_at: string;
+  severity_breakdown: Partial<Record<Severity, number>>;
 }
 
 export interface CostSummary {
