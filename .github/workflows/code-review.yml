@@ -42,9 +42,7 @@ jobs:
 
       - name: Detect repo language
         id: detect_lang
-        run: |
-          lang=$(python agent/tools/detect_lang.py)
-          echo "lang=$lang" >> "$GITHUB_OUTPUT"
+        run: python agent/tools/detect_lang.py
 
       - name: Install target repo Python dependencies
         if: steps.detect_lang.outputs.lang == 'python' || steps.detect_lang.outputs.lang == 'mixed'
