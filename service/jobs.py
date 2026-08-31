@@ -20,6 +20,7 @@ def _record_review_history(payload: dict, final_state) -> None:
         issues = _extract(final_state, "issues")
         verified_patches = _extract(final_state, "verified_patches")
         fix_pr_url = _extract(final_state, "fix_pr_url")
+        cost_usd = _extract(final_state, "cost_usd")
 
         verified_count = sum(1 for p in verified_patches if p.verified)
         issue_dicts = [
@@ -44,6 +45,7 @@ def _record_review_history(payload: dict, final_state) -> None:
             verified_count,
             fix_pr_url,
             summary=None,
+            cost_usd=cost_usd,
         )
     except Exception as exc:
         logger.error("Failed to record review history: %s", exc)

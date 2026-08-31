@@ -5,6 +5,7 @@ from typing import Optional
 
 from openai import AsyncOpenAI
 
+from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Severity
 
 MODEL = "gpt-4o-mini"
@@ -97,7 +98,7 @@ def _to_issue(item: dict) -> Optional[Issue]:
 
 async def _run_analyzer(
     client: AsyncOpenAI, category: str, diff: str, file_contents: dict[str, str]
-) -> list[dict]:
+) -> tuple[list[dict], float]:
     user_prompt = _build_user_prompt(category, diff, file_contents)
 
     try:
@@ -111,14 +112,15 @@ async def _run_analyzer(
             ],
         )
         raw = response.choices[0].message.content
+        cost = cost_from_response(MODEL, response)
     except Exception as exc:
         print(f"[analyze] {category} analyzer failed: {exc}")
-        return []
+        return [], 0.0
 
-    return _parse_issue_items(raw, category)
+    return _parse_issue_items(raw, category), cost
 
 
-async def _analyze_async(state: AgentState) -> list[Issue]:
+async def _analyze_async(state: AgentState) -> tuple[list[Issue], float]:
     client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
     categories = list(CATEGORY_INSTRUCTIONS.keys())
@@ -130,18 +132,20 @@ async def _analyze_async(state: AgentState) -> list[Issue]:
     )
 
     issues: list[Issue] = []
-    for raw_items in results:
+    total_cost = 0.0
+    for raw_items, cost in results:
+        total_cost += cost
         for item in raw_items:
             issue = _to_issue(item)
             if issue is not None:
                 issues.append(issue)
 
-    return issues
+    return issues, total_cost
 
 
 def analyze_node(state: AgentState) -> AgentState:
-    issues = asyncio.run(_analyze_async(state))
-    print(f"[analyze] {len(issues)} raw issue(s) found across 4 analyzers")
+    issues, cost_usd = asyncio.run(_analyze_async(state))
+    print(f"[analyze] {len(issues)} raw issue(s) found across 4 analyzers, ${cost_usd:.4f}")
 
     issues = [issue for issue in issues if issue.confidence >= MIN_CONFIDENCE]
     issues.sort(key=lambda issue: (SEVERITY_ORDER[issue.severity], -issue.confidence))
@@ -149,4 +153,4 @@ def analyze_node(state: AgentState) -> AgentState:
 
     print(f"[analyze] {len(issues)} issue(s) kept after filtering (confidence >= {MIN_CONFIDENCE})")
 
-    return state.model_copy(update={"issues": issues})
+    return state.model_copy(update={"issues": issues, "cost_usd": state.cost_usd + cost_usd})

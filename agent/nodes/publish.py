@@ -5,6 +5,7 @@ from openai import OpenAI
 
 from agent import github_client, pinecone_store
 from agent.fingerprint import fingerprint as compute_fingerprint
+from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Severity
 
 MODEL = "gpt-4o-mini"
@@ -38,7 +39,7 @@ def _fallback_summary(issues: list[Issue], verified_count: int) -> str:
     )
 
 
-def _generate_summary(issues: list[Issue], verified_count: int) -> str:
+def _generate_summary(issues: list[Issue], verified_count: int) -> tuple[str, float]:
     counts = _severity_counts(issues)
     user_prompt = (
         f"Total issues found: {len(issues)}\n"
@@ -58,10 +59,10 @@ def _generate_summary(issues: list[Issue], verified_count: int) -> str:
                 {"role": "user", "content": user_prompt},
             ],
         )
-        return response.choices[0].message.content.strip()
+        return response.choices[0].message.content.strip(), cost_from_response(MODEL, response)
     except Exception as exc:
         print(f"[publish] summary generation failed: {exc}")
-        return _fallback_summary(issues, verified_count)
+        return _fallback_summary(issues, verified_count), 0.0
 
 
 def _save_issues(issues: list[Issue], workspace: str) -> None:
@@ -117,7 +118,7 @@ def publish_node(state: AgentState) -> AgentState:
         print(f"[publish] fix PR: {fix_pr_url}")
 
     print("[publish] generating summary")
-    summary = _generate_summary(state.issues, len(verified_patches))
+    summary, cost_usd = _generate_summary(state.issues, len(verified_patches))
 
     print("[publish] posting summary comment")
     github_client.post_summary_comment(summary, state.issues, fix_pr_url, state.pr_number)
@@ -125,4 +126,4 @@ def publish_node(state: AgentState) -> AgentState:
     _upsert_semantic_memory(state, verified_patches)
     _save_issues(state.issues, state.workspace)
 
-    return state.model_copy(update={"fix_pr_url": fix_pr_url})
+    return state.model_copy(update={"fix_pr_url": fix_pr_url, "cost_usd": state.cost_usd + cost_usd})

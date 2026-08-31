@@ -3,11 +3,11 @@ import os
 
 from openai import OpenAI
 
-from agent import memory_store
+from agent import github_client, memory_store
 from agent.fingerprint import fingerprint as compute_fingerprint
+from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Patch
 from agent.tools.agent_tools import TOOL_SCHEMAS, build_tool_dispatch
-from agent import github_client
 
 MODEL = "gpt-4o"
 TEMPERATURE = 0.1
@@ -93,6 +93,7 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
     staged_fixes: dict[str, dict] = {}
     issues_raw: list[dict] = []
     fixed_indexes: list[int] = []
+    cost_usd = 0.0
 
     for _ in range(MAX_ITERATIONS):
         try:
@@ -104,8 +105,11 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
             )
         except Exception as exc:
             print(f"[agentic_analyze] LLM call failed: {exc}")
-            return state.model_copy(update={"issues": [], "patches": []})
+            return state.model_copy(
+                update={"issues": [], "patches": [], "cost_usd": state.cost_usd + cost_usd}
+            )
 
+        cost_usd += cost_from_response(MODEL, response)
         message = response.choices[0].message
         tool_calls = message.tool_calls or []
 
@@ -183,6 +187,8 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
     if skipped:
         print(f"[agentic_analyze] skipped {skipped} previously-dismissed issue(s)")
 
-    print(f"[agentic_analyze] {len(issues)} issue(s), {len(patches)} staged patch(es)")
+    print(f"[agentic_analyze] {len(issues)} issue(s), {len(patches)} staged patch(es), ${cost_usd:.4f}")
 
-    return state.model_copy(update={"issues": issues, "patches": patches})
+    return state.model_copy(
+        update={"issues": issues, "patches": patches, "cost_usd": state.cost_usd + cost_usd}
+    )

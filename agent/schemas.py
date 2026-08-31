@@ -66,3 +66,4 @@ class AgentState(BaseModel):
     base_branch: str = ""
     repo_full_name: str = ""
     workspace: str = ""
+    cost_usd: float = 0.0

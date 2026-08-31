@@ -8,8 +8,13 @@ CREATE TABLE IF NOT EXISTS reviews (
     verified_patch_count INTEGER NOT NULL DEFAULT 0,
     fix_pr_url TEXT,
     summary TEXT,
+    cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Kept alongside the column above so upgrading an existing database (where
+-- CREATE TABLE IF NOT EXISTS above is a no-op) still gets the new column.
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS review_issues (
     id SERIAL PRIMARY KEY,

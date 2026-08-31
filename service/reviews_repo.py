@@ -12,6 +12,7 @@ def record_review(
     verified_patch_count: int,
     fix_pr_url: Optional[str],
     summary: Optional[str],
+    cost_usd: float = 0.0,
 ) -> int:
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -19,8 +20,8 @@ def record_review(
                 """
                 INSERT INTO reviews
                     (repo_full_name, pr_number, head_sha, base_sha, issue_count,
-                     verified_patch_count, fix_pr_url, summary)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     verified_patch_count, fix_pr_url, summary, cost_usd)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -32,6 +33,7 @@ def record_review(
                     verified_patch_count,
                     fix_pr_url,
                     summary,
+                    cost_usd,
                 ),
             )
             review_id = cur.fetchone()["id"]
@@ -65,7 +67,7 @@ def get_review_history(repo_full_name: str, limit: int = 20) -> list[dict]:
             cur.execute(
                 """
                 SELECT id, repo_full_name, pr_number, head_sha, base_sha, issue_count,
-                       verified_patch_count, fix_pr_url, summary, created_at
+                       verified_patch_count, fix_pr_url, summary, cost_usd, created_at
                 FROM reviews
                 WHERE repo_full_name = %s
                 ORDER BY created_at DESC
@@ -95,3 +97,24 @@ def get_false_positive_rate(repo_full_name: str) -> dict:
     rate = dismissed / total if total else 0.0
 
     return {"total": total, "dismissed": dismissed, "false_positive_rate": rate}
+
+
+def get_cost_summary(repo_full_name: str) -> dict:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*) AS review_count, COALESCE(SUM(cost_usd), 0) AS total_cost_usd,
+                       COALESCE(AVG(cost_usd), 0) AS avg_cost_usd
+                FROM reviews
+                WHERE repo_full_name = %s
+                """,
+                (repo_full_name,),
+            )
+            row = cur.fetchone()
+
+    return {
+        "review_count": row["review_count"] or 0,
+        "total_cost_usd": float(row["total_cost_usd"]),
+        "avg_cost_per_pr_usd": float(row["avg_cost_usd"]),
+    }

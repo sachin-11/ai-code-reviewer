@@ -13,3 +13,8 @@ async def list_reviews(repo: str = Query(...), limit: int = Query(default=20, le
 @router.get("/stats")
 async def review_stats(repo: str = Query(...)):
     return reviews_repo.get_false_positive_rate(repo)
+
+
+@router.get("/cost")
+async def review_cost(repo: str = Query(...)):
+    return reviews_repo.get_cost_summary(repo)

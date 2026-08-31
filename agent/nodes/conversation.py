@@ -4,6 +4,7 @@ import os
 from openai import OpenAI
 
 from agent import github_client, memory_store
+from agent.llm_cost import cost_from_response
 
 MODEL = "gpt-4o-mini"
 TEMPERATURE = 0.2
@@ -51,6 +52,7 @@ def _classify_and_respond(finding: dict, reply_text: str, file_content: str) -> 
             ],
         )
         data = json.loads(response.choices[0].message.content)
+        print(f"[conversation] classification cost: ${cost_from_response(MODEL, response):.4f}")
     except Exception as exc:
         print(f"[conversation] classification failed: {exc}")
         return {"intent": "other", "reply": ""}
