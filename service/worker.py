@@ -18,7 +18,7 @@ _SERVICE_DIR = Path(__file__).resolve().parent
 load_dotenv(_SERVICE_DIR.parent / ".env")
 load_dotenv(_SERVICE_DIR / ".env")
 
-REQUIRED_ENV_VARS = ["GITHUB_TOKEN"]
+REQUIRED_ENV_VARS: list[str] = []
 
 
 def _check_env_vars() -> None:
@@ -27,6 +27,12 @@ def _check_env_vars() -> None:
     # agent/llm_client.py) -- either one satisfies this check.
     if not os.environ.get("OPENAI_API_KEY") and not os.environ.get("OLLAMA_BASE_URL"):
         missing.append("OPENAI_API_KEY (or OLLAMA_BASE_URL)")
+    # GITHUB_TOKEN isn't needed when a GitHub App is configured instead (see
+    # agent/github_client.py's _using_github_app) -- either satisfies this.
+    if not os.environ.get("GITHUB_TOKEN") and not (
+        os.environ.get("GITHUB_APP_ID") and os.environ.get("GITHUB_APP_PRIVATE_KEY")
+    ):
+        missing.append("GITHUB_TOKEN (or GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY)")
     if missing:
         print(f"Missing required environment variable(s): {', '.join(missing)}", file=sys.stderr)
         sys.exit(1)

@@ -179,7 +179,7 @@ def handle_review_pr(payload: dict) -> None:
         )
         return
 
-    github_token = os.environ["GITHUB_TOKEN"]
+    github_token = github_client.get_git_auth_token(repo_full_name)
     workspace = clone_workspace(repo_full_name, head_sha, github_token)
 
     try:
@@ -219,7 +219,7 @@ def handle_conversation(payload: dict) -> None:
 
     os.environ["REPO_FULL_NAME"] = repo_full_name
 
-    github_token = os.environ["GITHUB_TOKEN"]
+    github_token = github_client.get_git_auth_token(repo_full_name)
     workspace = clone_workspace(repo_full_name, head_sha, github_token)
 
     try:

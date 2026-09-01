@@ -1,12 +1,15 @@
 import subprocess
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 from unittest.mock import patch as mock_patch
 
+from agent import github_client
 from agent.github_client import (
     FIX_COMMIT_EMAIL,
     FIX_COMMIT_NAME,
     FIX_PR_MARKER,
     close_fix_pr,
+    get_git_auth_token,
     has_write_access,
     is_fix_pr,
     merge_fix_pr,
@@ -134,3 +137,78 @@ def test_close_fix_pr_closes_and_deletes_branch():
 
     mock_pr.edit.assert_called_once_with(state="closed")
     mock_repo.get_git_ref.assert_called_once_with("heads/ai-fix/pr-9-123")
+
+
+def test_using_github_app_false_without_both_vars(monkeypatch):
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("GITHUB_APP_PRIVATE_KEY", raising=False)
+    assert github_client._using_github_app() is False
+
+    monkeypatch.setenv("GITHUB_APP_ID", "123")
+    monkeypatch.delenv("GITHUB_APP_PRIVATE_KEY", raising=False)
+    assert github_client._using_github_app() is False
+
+
+def test_using_github_app_true_when_both_set(monkeypatch):
+    monkeypatch.setenv("GITHUB_APP_ID", "123")
+    monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake-key")
+    assert github_client._using_github_app() is True
+
+
+def test_get_authenticated_login_uses_app_slug_when_app_configured(monkeypatch):
+    monkeypatch.setenv("GITHUB_APP_ID", "123")
+    monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake-key")
+    monkeypatch.setenv("GITHUB_APP_SLUG", "my-bot")
+    assert github_client.get_authenticated_login() == "my-bot[bot]"
+
+
+def test_get_git_auth_token_uses_installation_token_when_app_configured(monkeypatch):
+    monkeypatch.setenv("GITHUB_APP_ID", "123")
+    monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake-key")
+
+    with mock_patch(
+        "agent.github_client._get_installation_token", return_value="inst-token-xyz"
+    ) as mock_get:
+        token = get_git_auth_token("org/repo")
+
+    assert token == "inst-token-xyz"
+    mock_get.assert_called_once_with("org/repo")
+
+
+def test_get_git_auth_token_falls_back_to_pat_without_app(monkeypatch):
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "pat-value")
+    assert get_git_auth_token("org/repo") == "pat-value"
+
+
+def test_installation_token_cache_reuses_unexpired_token():
+    github_client._installation_token_cache.clear()
+    future = datetime.now(timezone.utc) + timedelta(minutes=30)
+    github_client._installation_token_cache["org/repo"] = ("cached-token", future)
+
+    with mock_patch("agent.github_client._get_integration") as mock_get_integration:
+        token = github_client._get_installation_token("org/repo")
+
+    assert token == "cached-token"
+    assert not mock_get_integration.called
+    github_client._installation_token_cache.clear()
+
+
+def test_installation_token_cache_refetches_when_expired():
+    github_client._installation_token_cache.clear()
+    past = datetime.now(timezone.utc) - timedelta(minutes=1)
+    github_client._installation_token_cache["org/repo"] = ("stale-token", past)
+
+    mock_installation = MagicMock(id=999)
+    mock_auth = MagicMock(token="fresh-token", expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
+    mock_integration = MagicMock()
+    mock_integration.get_repo_installation.return_value = mock_installation
+    mock_integration.get_access_token.return_value = mock_auth
+
+    with mock_patch("agent.github_client._get_integration", return_value=mock_integration):
+        token = github_client._get_installation_token("org/repo")
+
+    assert token == "fresh-token"
+    mock_integration.get_repo_installation.assert_called_once_with("org", "repo")
+    mock_integration.get_access_token.assert_called_once_with(999)
+    github_client._installation_token_cache.clear()

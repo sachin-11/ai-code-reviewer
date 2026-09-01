@@ -2,9 +2,11 @@ import logging
 import os
 import subprocess
 import time
+from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Optional
 
-from github import Auth, Github
+from github import Auth, Github, GithubIntegration
 from github.Repository import Repository
 
 from agent.fingerprint import fingerprint as compute_fingerprint
@@ -42,13 +44,66 @@ FIX_PR_APPROVAL_PROMPT = (
 
 MAX_THREAD_HOPS = 10
 
+# Per-installation token cache: an installation token is only valid ~1 hour,
+# but this process (a long-lived RQ worker) handles many jobs against the
+# same repo over its lifetime, so refetching one per API call would be both
+# slow and needlessly hammer the token endpoint.
+_installation_token_cache: dict[str, tuple[str, datetime]] = {}
+
+
+def _using_github_app() -> bool:
+    return bool(os.environ.get("GITHUB_APP_ID")) and bool(os.environ.get("GITHUB_APP_PRIVATE_KEY"))
+
+
+@lru_cache
+def _get_integration() -> GithubIntegration:
+    app_id = os.environ["GITHUB_APP_ID"]
+    # Env-var UIs (Railway included) generally can't hold a real multi-line
+    # PEM cleanly -- accept a "\n"-escaped single-line value and restore it.
+    private_key = os.environ["GITHUB_APP_PRIVATE_KEY"].replace("\\n", "\n")
+    return GithubIntegration(auth=Auth.AppAuth(app_id, private_key))
+
+
+def _get_installation_token(repo_full_name: str) -> str:
+    cached = _installation_token_cache.get(repo_full_name)
+    if cached and cached[1] > datetime.now(timezone.utc) + timedelta(minutes=5):
+        return cached[0]
+
+    owner, repo = repo_full_name.split("/", 1)
+    installation = _get_integration().get_repo_installation(owner, repo)
+    auth = _get_integration().get_access_token(installation.id)
+    _installation_token_cache[repo_full_name] = (auth.token, auth.expires_at)
+    return auth.token
+
+
+def get_git_auth_token(repo_full_name: str) -> str:
+    # For git HTTPS clone/push, not the API client -- an installation token
+    # works exactly like a PAT embedded in the remote URL
+    # (x-access-token:<token>@github.com/...). Kept as an explicit function
+    # (rather than only inferred inside get_client()) because jobs.py needs
+    # this before REPO_FULL_NAME is necessarily set in the process env yet.
+    if _using_github_app():
+        return _get_installation_token(repo_full_name)
+    return os.environ["GITHUB_TOKEN"]
+
 
 def get_client() -> Github:
+    if _using_github_app():
+        return Github(auth=Auth.Token(_get_installation_token(os.environ["REPO_FULL_NAME"])))
     token = os.environ["GITHUB_TOKEN"]
     return Github(auth=Auth.Token(token))
 
 
 def get_authenticated_login() -> Optional[str]:
+    # A GitHub App has no /user identity to query (installation tokens can't
+    # call it) -- its comments/commits show up authored by "<slug>[bot]",
+    # deterministic from the slug alone, no API call needed. This is also
+    # what actually fixes the identity collision a personal-token setup has:
+    # the bot and a human reviewer are now genuinely different accounts, so
+    # the "ignore my own comment" checks below work correctly.
+    if _using_github_app():
+        slug = os.environ.get("GITHUB_APP_SLUG")
+        return f"{slug}[bot]" if slug else None
     try:
         return get_client().get_user().login
     except Exception as exc:
