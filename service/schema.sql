@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS reviews (
     latency_seconds DOUBLE PRECISION,
     iteration_count INTEGER,
     hit_max_iterations BOOLEAN NOT NULL DEFAULT FALSE,
+    hit_cost_cap BOOLEAN NOT NULL DEFAULT FALSE,
     node_latencies JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -24,6 +25,7 @@ ALTER TABLE reviews ADD COLUMN IF NOT EXISTS trace_url TEXT;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS latency_seconds DOUBLE PRECISION;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS iteration_count INTEGER;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS hit_max_iterations BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS hit_cost_cap BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS node_latencies JSONB;
 
 CREATE TABLE IF NOT EXISTS review_issues (
@@ -49,5 +51,6 @@ CREATE TABLE IF NOT EXISTS eval_samples (
 );
 
 CREATE INDEX IF NOT EXISTS idx_reviews_repo ON reviews (repo_full_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_reviews_created_at ON reviews (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_review_issues_review ON review_issues (review_id);
 CREATE INDEX IF NOT EXISTS idx_eval_samples_review ON eval_samples (review_id);

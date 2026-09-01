@@ -3,8 +3,10 @@ import os
 import random
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from agent import github_client
 from agent.fingerprint import fingerprint as compute_fingerprint
 from agent.graph import build_graph
 from agent.llm_client import tracing_enabled
@@ -22,6 +24,11 @@ logger = logging.getLogger(__name__)
 # eval -- this catches drift on real, unscripted PRs the golden dataset
 # doesn't cover.
 ONLINE_EVAL_SAMPLE_RATE = float(os.environ.get("ONLINE_EVAL_SAMPLE_RATE", "0.15"))
+
+# Circuit breaker on total OpenAI spend across every repo this deployment
+# reviews (one shared bill) -- independent of agentic_analyze's
+# MAX_COST_PER_REVIEW_USD, which only bounds a single review's own spend.
+DAILY_COST_CAP_USD = float(os.environ.get("DAILY_COST_CAP_USD", "5.0"))
 
 
 def _extract(result, key: str):
@@ -84,6 +91,7 @@ def _record_review_history(
         cost_usd = _extract(final_state, "cost_usd")
         iteration_count = _extract(final_state, "iteration_count")
         hit_max_iterations = _extract(final_state, "hit_max_iterations")
+        hit_cost_cap = _extract(final_state, "hit_cost_cap")
 
         verified_count = sum(1 for p in verified_patches if p.verified)
         issue_dicts = [
@@ -113,11 +121,21 @@ def _record_review_history(
             latency_seconds=latency_seconds,
             iteration_count=iteration_count,
             hit_max_iterations=hit_max_iterations,
+            hit_cost_cap=hit_cost_cap,
             node_latencies=node_latencies,
         )
     except Exception as exc:
         logger.error("Failed to record review history: %s", exc)
         return None
+
+
+def _daily_cost_cap_exceeded() -> bool:
+    since = datetime.now(timezone.utc) - timedelta(days=1)
+    try:
+        return reviews_repo.get_total_cost_since(since) >= DAILY_COST_CAP_USD
+    except Exception as exc:
+        logger.error("Could not check daily cost cap, failing open: %s", exc)
+        return False
 
 
 def _maybe_sample_for_eval(review_id: Optional[int], diff: str, issues: list) -> None:
@@ -147,6 +165,19 @@ def handle_review_pr(payload: dict) -> None:
     # (carried over from its original CI-script design), so this only needs
     # to be correct for the duration of this job.
     os.environ["REPO_FULL_NAME"] = repo_full_name
+
+    if _daily_cost_cap_exceeded():
+        logger.warning(
+            "Daily cost cap ($%.2f) reached, skipping review for %s#%s",
+            DAILY_COST_CAP_USD, repo_full_name, payload["pr_number"],
+        )
+        github_client.post_pr_comment(
+            payload["pr_number"],
+            f"⚠️ Automated review skipped: the daily cost cap (${DAILY_COST_CAP_USD:.2f}) "
+            "has been reached across all repos. It will resume automatically once usage "
+            "rolls off in the next 24 hours.",
+        )
+        return
 
     github_token = os.environ["GITHUB_TOKEN"]
     workspace = clone_workspace(repo_full_name, head_sha, github_token)

@@ -106,6 +106,39 @@ def test_max_iterations_does_not_hang_and_returns_empty():
     assert new_state.patches == []
 
 
+def test_per_review_cost_cap_stops_the_loop_early():
+    def make_expensive_tool_call_message():
+        tc = MagicMock()
+        tc.id = "call_x"
+        tc.function.name = "search_codebase"
+        tc.function.arguments = json.dumps({"query": "foo"})
+        msg = MagicMock()
+        msg.tool_calls = [tc]
+        msg.content = None
+        msg.model_dump = lambda exclude_none=True: {"role": "assistant", "tool_calls": []}
+        resp = MagicMock()
+        resp.choices = [MagicMock(message=msg)]
+        # Far above MAX_COST_PER_REVIEW_USD's $0.50 default in a single call.
+        resp.usage.prompt_tokens = 1_000_000
+        resp.usage.completion_tokens = 0
+        return resp
+
+    with mock_patch(
+        "agent.nodes.agentic_analyze._load_memory_and_scan_dismissals",
+        return_value={"dismissed_fingerprints": {}, "author_notes": {}},
+    ), mock_patch("agent.nodes.agentic_analyze.get_openai_client") as mock_get_client:
+        mock_get_client.return_value.chat.completions.create.side_effect = (
+            lambda *a, **k: make_expensive_tool_call_message()
+        )
+        state = AgentState(diff="d", workspace=".", pr_number=1)
+        new_state = agentic_analyze_node(state)
+
+    assert new_state.hit_cost_cap is True
+    assert new_state.hit_max_iterations is False
+    assert new_state.iteration_count == 1
+    assert new_state.cost_usd < 3.0  # one call's worth, not eight
+
+
 def test_llm_failure_returns_empty_without_crashing():
     with mock_patch(
         "agent.nodes.agentic_analyze._load_memory_and_scan_dismissals",

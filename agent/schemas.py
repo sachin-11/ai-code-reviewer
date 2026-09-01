@@ -69,3 +69,4 @@ class AgentState(BaseModel):
     cost_usd: float = 0.0
     iteration_count: int = 0
     hit_max_iterations: bool = False
+    hit_cost_cap: bool = False

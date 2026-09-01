@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from psycopg.types.json import Jsonb
@@ -19,6 +20,7 @@ def record_review(
     latency_seconds: Optional[float] = None,
     iteration_count: Optional[int] = None,
     hit_max_iterations: bool = False,
+    hit_cost_cap: bool = False,
     node_latencies: Optional[dict] = None,
 ) -> int:
     with get_connection() as conn:
@@ -28,8 +30,9 @@ def record_review(
                 INSERT INTO reviews
                     (repo_full_name, pr_number, head_sha, base_sha, issue_count,
                      verified_patch_count, fix_pr_url, summary, cost_usd, trace_url,
-                     latency_seconds, iteration_count, hit_max_iterations, node_latencies)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     latency_seconds, iteration_count, hit_max_iterations, hit_cost_cap,
+                     node_latencies)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -46,6 +49,7 @@ def record_review(
                     latency_seconds,
                     iteration_count,
                     hit_max_iterations,
+                    hit_cost_cap,
                     Jsonb(node_latencies) if node_latencies else None,
                 ),
             )
@@ -88,8 +92,8 @@ def get_review_history(repo_full_name: str, limit: int = 20) -> list[dict]:
                 """
                 SELECT id, repo_full_name, pr_number, head_sha, base_sha, issue_count,
                        verified_patch_count, fix_pr_url, summary, cost_usd, trace_url,
-                       latency_seconds, iteration_count, hit_max_iterations, node_latencies,
-                       created_at
+                       latency_seconds, iteration_count, hit_max_iterations, hit_cost_cap,
+                       node_latencies, created_at
                 FROM reviews
                 WHERE repo_full_name = %s
                 ORDER BY created_at DESC
@@ -232,3 +236,17 @@ def get_cost_summary(repo_full_name: str) -> dict:
         "total_cost_usd": float(row["total_cost_usd"]),
         "avg_cost_per_pr_usd": float(row["avg_cost_usd"]),
     }
+
+
+def get_total_cost_since(since: datetime) -> float:
+    # Global (not repo-scoped): the OpenAI bill is one shared budget across
+    # every repo this deployment reviews.
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(SUM(cost_usd), 0) AS total_cost_usd FROM reviews WHERE created_at >= %s",
+                (since,),
+            )
+            row = cur.fetchone()
+
+    return float(row["total_cost_usd"])

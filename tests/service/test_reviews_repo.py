@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from service import reviews_repo
 from service.db import init_schema
 
@@ -118,6 +120,42 @@ def test_latency_summary_aggregates_across_reviews(postgres_conn):
     by_pr = {r["pr_number"]: r for r in history}
     assert by_pr[1]["node_latencies"] == {"fetch": 1.0, "analyze": 8.0}
     assert by_pr[2]["hit_max_iterations"] is True
+
+    with postgres_conn.cursor() as cur:
+        cur.execute("DELETE FROM reviews WHERE repo_full_name = %s", (TEST_REPO,))
+    postgres_conn.commit()
+
+
+def test_total_cost_since_sums_only_recent_reviews(postgres_conn):
+    # get_total_cost_since is deliberately global (not repo-scoped) -- one
+    # shared OpenAI bill across every repo this deployment reviews. So this
+    # asserts on the *delta* it contributes, not an absolute total, since
+    # the real Postgres this points at may already hold other repos' recent
+    # reviews (it does, in local dev: this same DB has been exercised by
+    # real end-to-end tests all session).
+    init_schema()
+
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=1)
+
+    with postgres_conn.cursor() as cur:
+        cur.execute("DELETE FROM reviews WHERE repo_full_name = %s", (TEST_REPO,))
+    postgres_conn.commit()
+
+    baseline = reviews_repo.get_total_cost_since(cutoff)
+
+    reviews_repo.record_review(TEST_REPO, 1, "h1", "b1", [], 0, None, None, cost_usd=1.5)
+    reviews_repo.record_review(TEST_REPO, 2, "h2", "b2", [], 0, None, None, cost_usd=2.0)
+
+    with postgres_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE reviews SET created_at = %s WHERE repo_full_name = %s AND pr_number = 1",
+            (now - timedelta(days=2), TEST_REPO),
+        )
+    postgres_conn.commit()
+
+    total = reviews_repo.get_total_cost_since(cutoff)
+    assert abs((total - baseline) - 2.0) < 1e-9  # only the recent $2.0 review, not the 2-day-old $1.5 one
 
     with postgres_conn.cursor() as cur:
         cur.execute("DELETE FROM reviews WHERE repo_full_name = %s", (TEST_REPO,))

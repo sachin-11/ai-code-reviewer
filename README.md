@@ -86,6 +86,7 @@ sequenceDiagram
 - **Conversation mode** (`agent/nodes/conversation.py`) — a reply to one of the bot's own review comments is classified as `question` / `disagreement` / `other`; questions get an explanation, disagreements get acknowledged and recorded as a dismissal.
 - **Semantic memory** (`agent/pinecone_store.py`, optional) — past findings embedded in Pinecone so `search_semantic_memory` can match by meaning, not just keyword; the agent degrades gracefully (skips the tool) if `PINECONE_API_KEY` is unset.
 - **Cost tracking** — every OpenAI call's cost is computed (`agent/llm_cost.py`) and rolled up per review (`cost_usd`) and per repo (`/api/reviews/cost`).
+- **Cost circuit breakers** — two independent caps, since they guard against different failure modes: `MAX_COST_PER_REVIEW_USD` (default $0.50) stops a single review's own ReAct loop early if one huge diff or a chatty tool-calling run burns through it; `DAILY_COST_CAP_USD` (default $5.00) is a rolling 24h cap on total spend across every repo this deployment reviews — once hit, new reviews are skipped (with a PR comment explaining why, not silently) until usage rolls off.
 - **Latency & loop tracking** — wall-clock latency and per-node timing (via LangSmith trace child-runs) plus `iteration_count` / `hit_max_iterations` are recorded per review and surfaced on the dashboard (`/api/reviews/latency`).
 - **LLM-as-judge eval** — offline (`eval/run_offline_eval.py`, a golden dataset with known expected issues, weekly + on-demand CI) and online (a sampled fraction of real production reviews, judged for plausibility with no ground truth needed) — both use the same judge (`eval/judge.py`).
 - **LangSmith tracing** — optional; when `LANGCHAIN_TRACING_V2=true` is set, every OpenAI call and every graph node is traced, and the trace URL is stored per review.
@@ -177,6 +178,8 @@ cd dashboard && npm install && npm run dev        # http://localhost:3000
 | `PINECONE_API_KEY` / `PINECONE_INDEX_NAME` | `.env` | no | enables `search_semantic_memory`; skipped gracefully if unset |
 | `LANGCHAIN_TRACING_V2` / `LANGCHAIN_API_KEY` / `LANGCHAIN_PROJECT` | `.env` | no | LangSmith tracing + per-node latency capture |
 | `ONLINE_EVAL_SAMPLE_RATE` | `service/.env` | no (default `0.15`) | fraction of production reviews sampled for LLM-judge quality checks |
+| `MAX_COST_PER_REVIEW_USD` | `.env` | no (default `0.50`) | hard cap on a single review's own OpenAI spend |
+| `DAILY_COST_CAP_USD` | `service/.env` | no (default `5.00`) | rolling 24h cap on total spend across every repo; new reviews are skipped once reached |
 
 `load_dotenv()` is called with explicit paths in every entrypoint (root `.env` then a
 local `.env` if present) — see the comment in `service/main.py` — because an unqualified

@@ -1,4 +1,5 @@
 import json
+import os
 
 from agent import github_client, memory_store
 from agent.fingerprint import fingerprint as compute_fingerprint
@@ -10,6 +11,12 @@ from agent.tools.agent_tools import TOOL_SCHEMAS, build_tool_dispatch
 MODEL = resolve_model("gpt-4o")
 TEMPERATURE = 0.1
 MAX_ITERATIONS = 8
+
+# Defense in depth alongside MAX_ITERATIONS: bounds spend on a single review
+# directly (a huge diff or a chatty tool-calling loop can burn far more per
+# iteration than a typical review), independent of the global daily cap in
+# service/jobs.py, which only bounds spend *across* reviews.
+MAX_COST_PER_REVIEW_USD = float(os.environ.get("MAX_COST_PER_REVIEW_USD", "0.50"))
 
 SYSTEM_PROMPT = (
     "You are a senior security-focused code reviewer investigating a pull "
@@ -94,8 +101,17 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
     cost_usd = 0.0
     iteration_count = 0
     hit_max_iterations = False
+    hit_cost_cap = False
 
     for _ in range(MAX_ITERATIONS):
+        if cost_usd >= MAX_COST_PER_REVIEW_USD:
+            hit_cost_cap = True
+            print(
+                f"[agentic_analyze] hit per-review cost cap (${MAX_COST_PER_REVIEW_USD:.2f}) "
+                f"after {iteration_count} iteration(s), stopping"
+            )
+            break
+
         iteration_count += 1
         try:
             response = client.chat.completions.create(
@@ -206,5 +222,6 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
             "cost_usd": state.cost_usd + cost_usd,
             "iteration_count": iteration_count,
             "hit_max_iterations": hit_max_iterations,
+            "hit_cost_cap": hit_cost_cap,
         }
     )
