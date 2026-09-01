@@ -1,12 +1,25 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { Suspense } from "react";
+import { ContentTransition } from "@/components/ContentTransition";
+import { HeaderBar } from "@/components/HeaderBar";
+import { RepoNavigationProvider } from "@/components/RepoNavigation";
+import { TopProgressBar } from "@/components/TopProgressBar";
+import { getKnownRepos } from "@/lib/api";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "AI Code Reviewer Dashboard",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  let repos: string[] = [];
+  try {
+    repos = (await getKnownRepos()).repos;
+  } catch {
+    repos = [];
+  }
+
   return (
     <html lang="en">
       <head>
@@ -17,7 +30,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <RepoNavigationProvider>
+          <TopProgressBar />
+          {/* useSearchParams() inside HeaderBar requires a Suspense boundary,
+              or Next.js opts the whole route out of static rendering. */}
+          <Suspense fallback={null}>
+            <HeaderBar repos={repos} />
+          </Suspense>
+          <ContentTransition>{children}</ContentTransition>
+        </RepoNavigationProvider>
+      </body>
     </html>
   );
 }

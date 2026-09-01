@@ -1,15 +1,15 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import type { ChangeEvent } from "react";
+import { useRepoNavigation } from "./RepoNavigation";
 
 export function RepoSelector({ repos, initialRepo }: { repos: string[]; initialRepo: string }) {
-  const router = useRouter();
+  const { isPending, navigate } = useRepoNavigation();
 
   function handleChange(e: ChangeEvent<HTMLSelectElement>) {
     const repo = e.target.value;
     if (repo) {
-      router.push(`/?repo=${encodeURIComponent(repo)}`);
+      navigate(repo);
     }
   }
 
@@ -19,24 +19,45 @@ export function RepoSelector({ repos, initialRepo }: { repos: string[]; initialR
 
   return (
     <div className="relative">
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-muted"
-        aria-hidden="true"
-      >
-        <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" />
-      </svg>
+      {isPending ? (
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 animate-spin text-series-1"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.25" opacity="0.25" />
+          <path
+            d="M21 12a9 9 0 0 0-9-9"
+            stroke="currentColor"
+            strokeWidth="2.25"
+            strokeLinecap="round"
+          />
+        </svg>
+      ) : (
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-muted"
+          aria-hidden="true"
+        >
+          <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" />
+        </svg>
+      )}
       <select
         value={initialRepo}
         onChange={handleChange}
-        className="appearance-none rounded-md border border-border bg-surface py-1.5 pr-8 pl-9 text-sm text-ink-primary focus:outline-none focus:ring-1 focus:ring-series-1"
+        disabled={isPending}
+        aria-busy={isPending}
+        className="appearance-none rounded-md border border-border bg-surface py-1.5 pr-8 pl-9 text-sm text-ink-primary transition-opacity focus:outline-none focus:ring-1 focus:ring-series-1 disabled:opacity-60"
       >
         <option value="" disabled>
           Select a repository

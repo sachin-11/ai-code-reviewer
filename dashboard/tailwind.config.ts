@@ -29,6 +29,16 @@ const config: Config = {
         card: "var(--shadow-md)",
         lifted: "var(--shadow-lifted)",
       },
+      keyframes: {
+        "progress-sweep": {
+          "0%": { transform: "translateX(-100%) scaleX(0.4)" },
+          "60%": { transform: "translateX(30%) scaleX(0.6)" },
+          "100%": { transform: "translateX(100%) scaleX(0.4)" },
+        },
+      },
+      animation: {
+        "progress-sweep": "progress-sweep 1.1s ease-in-out infinite",
+      },
     },
   },
   plugins: [],
