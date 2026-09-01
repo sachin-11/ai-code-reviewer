@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -67,8 +68,10 @@ def run_tests(file: str, workspace: str) -> dict:
     target = file if os.path.isfile(full_path) else "."
 
     try:
+        # sys.executable -m pytest, not a bare "pytest" resolved off PATH:
+        # see the matching comment in agent/nodes/verify.py.
         result = subprocess.run(
-            ["pytest", target, "--tb=short", "-q"],
+            [sys.executable, "-m", "pytest", target, "--tb=short", "-q"],
             cwd=workspace,
             capture_output=True,
             text=True,

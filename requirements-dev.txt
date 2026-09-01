@@ -1,4 +1,5 @@
 -r agent/requirements.txt
 -r service/requirements.txt
 pytest>=8.0
+pytest-timeout>=2.3
 httpx>=0.27

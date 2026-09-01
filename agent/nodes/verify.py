@@ -1,7 +1,9 @@
+import importlib.util
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from typing import Optional
 
@@ -70,10 +72,15 @@ def _lint_in_tempfile(full_path: str, ext: str, content: str) -> tuple[bool, str
 
 
 def _run_python_tests(workspace: str) -> tuple[bool, str]:
-    if not shutil.which("pytest"):
+    # sys.executable -m pytest, not a bare "pytest" resolved off PATH: on a
+    # machine with multiple projects' venvs, PATH can put an unrelated
+    # project's pytest.exe first, which then fails against this workspace's
+    # dependencies with no useful output. sys.executable pins it to this
+    # interpreter's own environment.
+    if importlib.util.find_spec("pytest") is None:
         return True, ""
 
-    cmd = ["pytest", "--tb=short", "-q", "--timeout=30"]
+    cmd = [sys.executable, "-m", "pytest", "--tb=short", "-q", "--timeout=30"]
     return _run_subprocess(cmd, timeout=TEST_TIMEOUT_SECONDS, cwd=workspace)
 
 
