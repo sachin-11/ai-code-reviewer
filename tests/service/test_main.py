@@ -109,6 +109,30 @@ def test_review_comment_reply_queued(client):
     assert r.json() == {"status": "queued", "job": "handle_conversation"}
 
 
+def test_fix_pr_approve_comment_queued(client):
+    payload = {
+        "action": "created",
+        "issue": {"number": 9, "pull_request": {"url": "https://api.github.com/.../pulls/9"}},
+        "comment": {"body": "approve", "user": {"login": "owner1"}},
+        "repository": {"full_name": "org/repo"},
+    }
+    r = _post(client, "issue_comment", payload)
+    assert r.status_code == 200
+    assert r.json() == {"status": "queued", "job": "fix_pr_decision"}
+
+
+def test_issue_comment_on_plain_issue_ignored(client):
+    payload = {
+        "action": "created",
+        "issue": {"number": 9},
+        "comment": {"body": "approve", "user": {"login": "owner1"}},
+        "repository": {"full_name": "org/repo"},
+    }
+    r = _post(client, "issue_comment", payload)
+    assert r.status_code == 200
+    assert r.json() == {"status": "ignored"}
+
+
 def test_unrelated_event_type_ignored(client):
     r = _post(client, "issues", {"action": "opened"})
     assert r.status_code == 200

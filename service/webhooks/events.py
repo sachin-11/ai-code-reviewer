@@ -1,6 +1,7 @@
 from typing import Optional
 
 HANDLED_PR_ACTIONS = {"opened", "synchronize", "reopened"}
+FIX_PR_DECISIONS = {"approve", "reject"}
 
 
 def parse_pull_request_event(payload: dict) -> Optional[dict]:
@@ -41,4 +42,28 @@ def parse_review_comment_event(payload: dict) -> Optional[dict]:
         "comment_author": user.get("login"),
         "repo_full_name": repo.get("full_name"),
         "head_sha": head.get("sha"),
+    }
+
+
+def parse_fix_pr_comment_event(payload: dict) -> Optional[dict]:
+    if payload.get("action") != "created":
+        return None
+
+    issue = payload.get("issue") or {}
+    if "pull_request" not in issue:
+        return None  # a comment on a plain issue, not a PR
+
+    comment = payload.get("comment") or {}
+    decision = (comment.get("body") or "").strip().lower()
+    if decision not in FIX_PR_DECISIONS:
+        return None
+
+    user = comment.get("user") or {}
+    repo = payload.get("repository") or {}
+
+    return {
+        "pr_number": issue.get("number"),
+        "decision": decision,
+        "comment_author": user.get("login"),
+        "repo_full_name": repo.get("full_name"),
     }

@@ -109,7 +109,6 @@ def publish_node(state: AgentState) -> AgentState:
         print("[publish] opening fix PR for verified patches")
         fix_pr_url = github_client.raise_fix_pr(
             verified_patches,
-            state.head_branch,
             state.base_branch,
             state.pr_number,
             state.workspace,

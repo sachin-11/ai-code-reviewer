@@ -22,12 +22,22 @@ SEVERITY_EMOJI = {
 }
 
 SUMMARY_MARKER = "<!-- ai-code-reviewer:summary -->"
+FIX_PR_MARKER = "<!-- ai-code-reviewer:fix-pr -->"
 
 MIN_COMMENT_CONFIDENCE = 0.6
 POST_DELAY_SECONDS = 0.5
 
 FIX_COMMIT_NAME = "ai-code-reviewer[bot]"
 FIX_COMMIT_EMAIL = "ai-code-reviewer[bot]@users.noreply.github.com"
+
+FIX_PR_MERGE_METHOD = "squash"
+
+FIX_PR_APPROVAL_PROMPT = (
+    "This fix PR was generated automatically and has not been merged yet.\n\n"
+    "Reply **approve** on this thread to merge it, or **reject** to close it "
+    "without merging. Only users with write access to this repository can do "
+    "either."
+)
 
 
 MAX_THREAD_HOPS = 10
@@ -220,7 +230,6 @@ def post_summary_comment(
 
 def raise_fix_pr(
     patches: list[Patch],
-    head_branch: str,
     base_branch: str,
     pr_number: int,
     workspace: str,
@@ -232,8 +241,15 @@ def raise_fix_pr(
     branch_name = f"ai-fix/pr-{pr_number}-{int(time.time())}"
 
     try:
+        # No start-point ref: clone_workspace already leaves the workspace
+        # checked out (detached) at exactly head_sha, and a plain `git clone`
+        # only creates a local branch for the default branch -- head_branch
+        # only exists as origin/<head_branch>, so passing it here as a
+        # literal ref fails. Branching from current HEAD is also more
+        # correct: it's pinned to the exact reviewed commit even if
+        # head_branch has since moved.
         subprocess.run(
-            ["git", "checkout", "-b", branch_name, head_branch],
+            ["git", "checkout", "-b", branch_name],
             cwd=workspace,
             check=True,
             capture_output=True,
@@ -320,12 +336,80 @@ def raise_fix_pr(
         repo = get_repo()
         pull = repo.create_pull(
             title=f"AI fix for PR #{pr_number}",
-            body=f"Automated fixes for #{pr_number}.",
+            body=f"Automated fixes for #{pr_number}.\n\n{FIX_PR_MARKER}",
             head=branch_name,
             base=base_branch,
-            draft=True,
         )
-        return pull.html_url
     except Exception as exc:
         logger.error("Failed to create fix PR for #%s: %s", pr_number, exc)
         return None
+
+    try:
+        pull.create_issue_comment(FIX_PR_APPROVAL_PROMPT)
+    except Exception as exc:
+        logger.error("Failed to post approval prompt on fix PR #%s: %s", pull.number, exc)
+
+    return pull.html_url
+
+
+def is_fix_pr(pr_number: int) -> bool:
+    try:
+        repo = get_repo()
+        pr = repo.get_pull(pr_number)
+        return FIX_PR_MARKER in (pr.body or "")
+    except Exception as exc:
+        logger.error("Failed to fetch PR #%s: %s", pr_number, exc)
+        return False
+
+
+def has_write_access(username: str) -> bool:
+    try:
+        repo = get_repo()
+        return repo.get_collaborator_permission(username) in ("admin", "write")
+    except Exception as exc:
+        logger.error("Failed to check collaborator permission for %s: %s", username, exc)
+        return False
+
+
+def merge_fix_pr(pr_number: int) -> bool:
+    try:
+        repo = get_repo()
+        pr = repo.get_pull(pr_number)
+        pr.merge(
+            commit_message=f"Merge AI fix PR #{pr_number}",
+            merge_method=FIX_PR_MERGE_METHOD,
+            delete_branch=True,
+        )
+        return True
+    except Exception as exc:
+        logger.error("Failed to merge fix PR #%s: %s", pr_number, exc)
+        return False
+
+
+def close_fix_pr(pr_number: int) -> bool:
+    try:
+        repo = get_repo()
+        pr = repo.get_pull(pr_number)
+        head_ref = pr.head.ref
+        pr.edit(state="closed")
+    except Exception as exc:
+        logger.error("Failed to close fix PR #%s: %s", pr_number, exc)
+        return False
+
+    try:
+        repo.get_git_ref(f"heads/{head_ref}").delete()
+    except Exception as exc:
+        logger.error("Failed to delete branch %s after closing PR #%s: %s", head_ref, pr_number, exc)
+
+    return True
+
+
+def post_pr_comment(pr_number: int, body: str) -> bool:
+    try:
+        repo = get_repo()
+        pr = repo.get_pull(pr_number)
+        pr.create_issue_comment(body)
+        return True
+    except Exception as exc:
+        logger.error("Failed to post comment on PR #%s: %s", pr_number, exc)
+        return False

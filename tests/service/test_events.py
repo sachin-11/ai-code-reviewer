@@ -1,4 +1,8 @@
-from service.webhooks.events import parse_pull_request_event, parse_review_comment_event
+from service.webhooks.events import (
+    parse_fix_pr_comment_event,
+    parse_pull_request_event,
+    parse_review_comment_event,
+)
 
 
 def test_pull_request_opened_parsed():
@@ -54,3 +58,48 @@ def test_review_comment_top_level_not_a_reply_ignored():
         "repository": {"full_name": "org/repo"},
     }
     assert parse_review_comment_event(payload) is None
+
+
+def test_fix_pr_approve_comment_parsed():
+    payload = {
+        "action": "created",
+        "issue": {"number": 9, "pull_request": {"url": "https://api.github.com/.../pulls/9"}},
+        "comment": {"body": "  Approve  ", "user": {"login": "owner1"}},
+        "repository": {"full_name": "org/repo"},
+    }
+    assert parse_fix_pr_comment_event(payload) == {
+        "pr_number": 9,
+        "decision": "approve",
+        "comment_author": "owner1",
+        "repo_full_name": "org/repo",
+    }
+
+
+def test_fix_pr_reject_comment_parsed():
+    payload = {
+        "action": "created",
+        "issue": {"number": 9, "pull_request": {}},
+        "comment": {"body": "reject", "user": {"login": "owner1"}},
+        "repository": {"full_name": "org/repo"},
+    }
+    assert parse_fix_pr_comment_event(payload)["decision"] == "reject"
+
+
+def test_issue_comment_on_plain_issue_ignored():
+    payload = {
+        "action": "created",
+        "issue": {"number": 9},
+        "comment": {"body": "approve", "user": {"login": "owner1"}},
+        "repository": {"full_name": "org/repo"},
+    }
+    assert parse_fix_pr_comment_event(payload) is None
+
+
+def test_issue_comment_unrelated_text_ignored():
+    payload = {
+        "action": "created",
+        "issue": {"number": 9, "pull_request": {}},
+        "comment": {"body": "nice work!", "user": {"login": "owner1"}},
+        "repository": {"full_name": "org/repo"},
+    }
+    assert parse_fix_pr_comment_event(payload) is None

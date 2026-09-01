@@ -6,7 +6,11 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from service.config import get_settings
 from service.queue.base import InMemoryJobQueue
 from service.queue.redis_queue import RedisJobQueue
-from service.webhooks.events import parse_pull_request_event, parse_review_comment_event
+from service.webhooks.events import (
+    parse_fix_pr_comment_event,
+    parse_pull_request_event,
+    parse_review_comment_event,
+)
 from service.webhooks.signature import verify_signature
 
 router = APIRouter()
@@ -58,6 +62,13 @@ async def github_webhook(
         if event:
             _enqueue_or_503("handle_conversation", event)
             return {"status": "queued", "job": "handle_conversation"}
+        return {"status": "ignored"}
+
+    if x_github_event == "issue_comment":
+        event = parse_fix_pr_comment_event(payload)
+        if event:
+            _enqueue_or_503("fix_pr_decision", event)
+            return {"status": "queued", "job": "fix_pr_decision"}
         return {"status": "ignored"}
 
     return {"status": "ignored"}

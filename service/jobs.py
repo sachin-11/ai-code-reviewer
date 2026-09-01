@@ -8,6 +8,7 @@ from typing import Optional
 from agent.fingerprint import fingerprint as compute_fingerprint
 from agent.graph import build_graph
 from agent.llm_client import tracing_enabled
+from agent.nodes import fix_pr_decision
 from agent.nodes.conversation import handle_comment
 from agent.schemas import AgentState
 from service import reviews_repo
@@ -201,9 +202,19 @@ def handle_conversation(payload: dict) -> None:
         cleanup_workspace(workspace)
 
 
+def handle_fix_pr_decision(payload: dict) -> None:
+    os.environ["REPO_FULL_NAME"] = payload["repo_full_name"]
+    fix_pr_decision.handle_fix_pr_decision(
+        pr_number=payload["pr_number"],
+        decision=payload["decision"],
+        comment_author=payload["comment_author"],
+    )
+
+
 JOB_HANDLERS = {
     "review_pr": handle_review_pr,
     "handle_conversation": handle_conversation,
+    "fix_pr_decision": handle_fix_pr_decision,
 }
 
 
