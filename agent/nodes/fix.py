@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from typing import Optional
 
 from openai import AsyncOpenAI
@@ -7,6 +8,8 @@ from openai import AsyncOpenAI
 from agent.llm_client import get_async_openai_client, resolve_model
 from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Patch, Severity
+
+logger = logging.getLogger(__name__)
 
 MODEL = resolve_model("gpt-4o")
 TEMPERATURE = 0.0
@@ -53,13 +56,13 @@ async def _generate_patch(
         raw = response.choices[0].message.content
         cost = cost_from_response(MODEL, response)
     except Exception as exc:
-        print(f"[fix] patch generation failed for {issue.file}:{issue.line_start}: {exc}")
+        logger.error("patch generation failed for %s:%d: %s", issue.file, issue.line_start, exc)
         return None, 0.0
 
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        print(f"[fix] invalid JSON returned for {issue.file}:{issue.line_start}")
+        logger.warning("invalid JSON returned for %s:%d", issue.file, issue.line_start)
         return None, cost
 
     original_snippet = data.get("original_snippet", "")
@@ -70,7 +73,7 @@ async def _generate_patch(
         return None, cost
 
     if original_snippet not in file_content:
-        print(f"[fix] original_snippet not found verbatim in {issue.file}, discarding patch")
+        logger.warning("original_snippet not found verbatim in %s, discarding patch", issue.file)
         return None, cost
 
     return (
@@ -112,5 +115,5 @@ async def _fix_async(state: AgentState) -> tuple[list[Patch], float]:
 
 def fix_node(state: AgentState) -> AgentState:
     patches, cost_usd = asyncio.run(_fix_async(state))
-    print(f"[fix] {len(patches)} patch(es) generated, ${cost_usd:.4f}")
+    logger.info("%d patch(es) generated, $%.4f", len(patches), cost_usd)
     return state.model_copy(update={"patches": patches, "cost_usd": state.cost_usd + cost_usd})

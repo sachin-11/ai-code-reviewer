@@ -91,6 +91,7 @@ sequenceDiagram
 - **Latency & loop tracking** — wall-clock latency and per-node timing (via LangSmith trace child-runs) plus `iteration_count` / `hit_max_iterations` are recorded per review and surfaced on the dashboard (`/api/reviews/latency`).
 - **LLM-as-judge eval** — offline (`eval/run_offline_eval.py`, a golden dataset with known expected issues, weekly + on-demand CI) and online (a sampled fraction of real production reviews, judged for plausibility with no ground truth needed) — both use the same judge (`eval/judge.py`).
 - **LangSmith tracing** — optional; when `LANGCHAIN_TRACING_V2=true` is set, every OpenAI call and every graph node is traced, and the trace URL is stored per review.
+- **Structured logging** — every node and the worker/web service use Python's `logging` (not `print()`), configured once via `agent/logging_config.py` (`LOG_LEVEL`, default `INFO`) so operational messages carry a real level and are actually emitted (without a configured handler, `INFO`-level records are silently dropped) -- errors are distinguishable from routine progress in the hosted deployment's log stream.
 - **Dashboard** (`dashboard/`) — Next.js app: repo selector, review history table, cost/latency/false-positive/eval-quality stat tiles, per-review node-latency breakdown on hover.
 
 ---

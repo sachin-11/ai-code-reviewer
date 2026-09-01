@@ -1,3 +1,4 @@
+import logging
 import os
 import platform
 import sys
@@ -7,8 +8,11 @@ from dotenv import load_dotenv
 from redis import Redis
 from rq import Queue, SimpleWorker, Worker
 
+from agent.logging_config import configure_logging
 from service.db import init_schema
 from service.queue.redis_queue import DEFAULT_QUEUE_NAME
+
+logger = logging.getLogger(__name__)
 
 # load_dotenv() with no path searches from *this file's* directory upward,
 # stopping at the first .env it finds -- since service/.env exists, an
@@ -40,11 +44,12 @@ def _check_env_vars() -> None:
 
 def main() -> None:
     _check_env_vars()
+    configure_logging()
 
     try:
         init_schema()
     except Exception as exc:
-        print(f"[worker] failed to initialize database schema: {exc}", file=sys.stderr)
+        logger.error("Failed to initialize database schema: %s", exc)
 
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     conn = Redis.from_url(redis_url)

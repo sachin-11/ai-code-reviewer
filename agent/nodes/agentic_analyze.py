@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 
 from agent import github_client, memory_store
@@ -7,6 +8,8 @@ from agent.llm_client import get_openai_client, resolve_model
 from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Patch
 from agent.tools.agent_tools import TOOL_SCHEMAS, build_tool_dispatch
+
+logger = logging.getLogger(__name__)
 
 MODEL = resolve_model("gpt-4o")
 TEMPERATURE = 0.1
@@ -74,10 +77,10 @@ def _load_memory_and_scan_dismissals(pr_number: int) -> dict:
         pr = repo.get_pull(pr_number)
         new_dismissals = memory_store.scan_for_new_dismissals(pr, memory)
         if new_dismissals:
-            print(f"[agentic_analyze] recorded {new_dismissals} new dismissal(s) from reactions")
+            logger.info("recorded %d new dismissal(s) from reactions", new_dismissals)
             memory_store.save_memory(memory)
     except Exception as exc:
-        print(f"[agentic_analyze] could not scan for dismissals: {exc}")
+        logger.warning("could not scan for dismissals: %s", exc)
 
     return memory
 
@@ -106,9 +109,9 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
     for _ in range(MAX_ITERATIONS):
         if cost_usd >= MAX_COST_PER_REVIEW_USD:
             hit_cost_cap = True
-            print(
-                f"[agentic_analyze] hit per-review cost cap (${MAX_COST_PER_REVIEW_USD:.2f}) "
-                f"after {iteration_count} iteration(s), stopping"
+            logger.warning(
+                "hit per-review cost cap ($%.2f) after %d iteration(s), stopping",
+                MAX_COST_PER_REVIEW_USD, iteration_count,
             )
             break
 
@@ -121,7 +124,7 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
                 tools=TOOL_SCHEMAS,
             )
         except Exception as exc:
-            print(f"[agentic_analyze] LLM call failed: {exc}")
+            logger.error("LLM call failed: %s", exc)
             return state.model_copy(
                 update={
                     "issues": [],
@@ -148,7 +151,7 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
             except json.JSONDecodeError:
                 args = {}
 
-            print(f"[agentic_analyze] tool call: {name}({args})")
+            logger.info("tool call: %s(%s)", name, args)
 
             fn = dispatch.get(name)
             if fn is None:
@@ -171,7 +174,7 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
             )
     else:
         hit_max_iterations = True
-        print(f"[agentic_analyze] hit max iterations ({MAX_ITERATIONS}) without a final answer")
+        logger.warning("hit max iterations (%d) without a final answer", MAX_ITERATIONS)
 
     all_issues: list[Issue] = []
     for item in issues_raw:
@@ -208,11 +211,11 @@ def agentic_analyze_node(state: AgentState) -> AgentState:
 
     skipped = len(all_issues) - len(issues)
     if skipped:
-        print(f"[agentic_analyze] skipped {skipped} previously-dismissed issue(s)")
+        logger.info("skipped %d previously-dismissed issue(s)", skipped)
 
-    print(
-        f"[agentic_analyze] {len(issues)} issue(s), {len(patches)} staged patch(es), "
-        f"${cost_usd:.4f}, {iteration_count} iteration(s)"
+    logger.info(
+        "%d issue(s), %d staged patch(es), $%.4f, %d iteration(s)",
+        len(issues), len(patches), cost_usd, iteration_count,
     )
 
     return state.model_copy(

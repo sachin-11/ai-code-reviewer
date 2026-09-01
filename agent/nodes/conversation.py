@@ -1,8 +1,11 @@
 import json
+import logging
 
 from agent import github_client, memory_store
 from agent.llm_client import get_openai_client, resolve_model
 from agent.llm_cost import cost_from_response
+
+logger = logging.getLogger(__name__)
 
 MODEL = resolve_model("gpt-4o-mini")
 TEMPERATURE = 0.2
@@ -50,9 +53,9 @@ def _classify_and_respond(finding: dict, reply_text: str, file_content: str) -> 
             ],
         )
         data = json.loads(response.choices[0].message.content)
-        print(f"[conversation] classification cost: ${cost_from_response(MODEL, response):.4f}")
+        logger.info("classification cost: $%.4f", cost_from_response(MODEL, response))
     except Exception as exc:
-        print(f"[conversation] classification failed: {exc}")
+        logger.error("classification failed: %s", exc)
         return {"intent": "other", "reply": ""}
 
     intent = data.get("intent")
@@ -65,7 +68,7 @@ def _classify_and_respond(finding: dict, reply_text: str, file_content: str) -> 
 def handle_comment(comment_id: int, comment_author: str, pr_number: int, workspace: str) -> None:
     bot_login = github_client.get_authenticated_login()
     if bot_login and comment_author == bot_login:
-        print("[conversation] ignoring the bot's own comment")
+        logger.info("ignoring the bot's own comment")
         return
 
     comment = github_client.get_review_comment(comment_id, pr_number)
@@ -74,12 +77,12 @@ def handle_comment(comment_id: int, comment_author: str, pr_number: int, workspa
 
     root = github_client.get_thread_root(comment, pr_number)
     if root is None:
-        print("[conversation] could not resolve thread root, ignoring")
+        logger.warning("could not resolve thread root, ignoring")
         return
 
     finding = memory_store.parse_marker(root.body)
     if finding is None:
-        print("[conversation] thread root is not a bot finding, ignoring")
+        logger.info("thread root is not a bot finding, ignoring")
         return
 
     file_content = github_client.fetch_file_content(finding["file"], workspace)
@@ -99,12 +102,12 @@ def handle_comment(comment_id: int, comment_author: str, pr_number: int, workspa
         github_client.reply_to_review_comment(
             pr_number, comment_id, result["reply"] or DEFAULT_DISMISSAL_REPLY
         )
-        print(f"[conversation] recorded dismissal from {comment_author} for {finding['file']}")
+        logger.info("recorded dismissal from %s for %s", comment_author, finding["file"])
         return
 
     if result["intent"] == "question" and result["reply"]:
         github_client.reply_to_review_comment(pr_number, comment_id, result["reply"])
-        print(f"[conversation] replied to question from {comment_author}")
+        logger.info("replied to question from %s", comment_author)
         return
 
-    print(f"[conversation] intent={result['intent']}, no reply sent")
+    logger.info("intent=%s, no reply sent", result["intent"])

@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -8,6 +9,8 @@ import tempfile
 from typing import Optional
 
 from agent.schemas import AgentState, Patch
+
+logger = logging.getLogger(__name__)
 
 PYTHON_EXTENSIONS = {".py"}
 JS_EXTENSIONS = {".ts", ".tsx", ".js", ".jsx"}
@@ -144,7 +147,7 @@ def _verify_patch(patch: Patch, workspace: str) -> Patch:
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(original_content)
         except OSError as exc:
-            print(f"[verify] CRITICAL: failed to restore {patch.file}: {exc}")
+            logger.critical("failed to restore %s: %s", patch.file, exc)
 
     if not tests_ok:
         return patch.model_copy(
@@ -158,6 +161,6 @@ def verify_node(state: AgentState) -> AgentState:
     verified_patches = [_verify_patch(patch, state.workspace) for patch in state.patches]
 
     passed = sum(1 for p in verified_patches if p.verified)
-    print(f"[verify] {passed}/{len(verified_patches)} patch(es) passed verification")
+    logger.info("%d/%d patch(es) passed verification", passed, len(verified_patches))
 
     return state.model_copy(update={"verified_patches": verified_patches})

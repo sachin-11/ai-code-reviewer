@@ -1,4 +1,7 @@
+import logging
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class JobQueue(Protocol):
@@ -16,4 +19,4 @@ class InMemoryJobQueue:
     def enqueue(self, job_type: str, payload: dict) -> None:
         job = {"type": job_type, "payload": payload}
         self.jobs.append(job)
-        print(f"[queue:stub] enqueued {job_type}: pr={payload.get('pr_number')}")
+        logger.info("[queue:stub] enqueued %s: pr=%s", job_type, payload.get("pr_number"))

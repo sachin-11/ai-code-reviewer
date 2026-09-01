@@ -1,5 +1,9 @@
+import logging
+
 from agent import github_client
 from agent.schemas import AgentState
+
+logger = logging.getLogger(__name__)
 
 MAX_FILE_LINES = 400
 
@@ -20,7 +24,7 @@ def fetch_node(state: AgentState) -> AgentState:
         state.base_sha, state.head_sha, state.workspace
     )
 
-    print(f"[fetch] {len(changed_files)} file(s) changed")
+    logger.info("%d file(s) changed", len(changed_files))
 
     file_contents = {}
     for filepath in changed_files:

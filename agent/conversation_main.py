@@ -4,6 +4,7 @@ import traceback
 
 from dotenv import load_dotenv
 
+from agent.logging_config import configure_logging
 from agent.nodes.conversation import handle_comment
 
 load_dotenv()
@@ -31,6 +32,7 @@ def _check_env_vars() -> None:
 
 def main() -> None:
     _check_env_vars()
+    configure_logging()
 
     try:
         handle_comment(

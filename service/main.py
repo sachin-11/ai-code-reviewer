@@ -5,6 +5,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
+from agent.logging_config import configure_logging
 from service.db import init_schema
 from service.reviews_router import router as reviews_router
 from service.webhooks.router import router as webhook_router
@@ -17,6 +18,7 @@ _SERVICE_DIR = Path(__file__).resolve().parent
 load_dotenv(_SERVICE_DIR.parent / ".env")
 load_dotenv(_SERVICE_DIR / ".env")
 
+configure_logging()
 logger = logging.getLogger(__name__)
 
 

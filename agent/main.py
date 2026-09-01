@@ -5,6 +5,7 @@ import traceback
 from dotenv import load_dotenv
 
 from agent.graph import build_graph
+from agent.logging_config import configure_logging
 from agent.schemas import AgentState
 
 load_dotenv()
@@ -50,6 +51,7 @@ def _extract(result, key: str):
 
 def main() -> None:
     _check_env_vars()
+    configure_logging()
 
     try:
         initial_state = _build_initial_state()
