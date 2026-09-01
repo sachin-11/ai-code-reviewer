@@ -81,7 +81,8 @@ sequenceDiagram
 
 - **Agentic analysis** — GPT-4o tool-calling loop, not a single-shot prompt; see table above.
 - **Verified fixes** — patches are lint/test-checked in a scratch copy before ever being proposed; unverified patches are reported but not opened as a PR.
-- **Approve/reject fix PRs by comment** — a fix PR carries a marker + an approval-prompt comment; replying `approve` or `reject` on that thread (via the `issue_comment` webhook, `agent/nodes/fix_pr_decision.py`) merges or closes it, but only for commenters with write access to the repo (checked via the GitHub API, not assumed). Nothing merges without that explicit approval — the bot never merges on its own. Note: `GITHUB_TOKEN` should belong to a dedicated bot account or GitHub App, not a human reviewer's own personal token — the "ignore my own comments" guard compares the comment author to the token's identity, so a shared token would block that person from ever approving.
+- **Approve/reject fix PRs by comment** — a fix PR carries a marker + an approval-prompt comment; replying `approve` or `reject` on that thread (via the `issue_comment` webhook, `agent/nodes/fix_pr_decision.py`) merges or closes it, but only for commenters with write access to the repo (checked via the GitHub API, not assumed). Nothing merges without that explicit approval — the bot never merges on its own.
+- **GitHub App auth** (hosted mode) — set `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY` (+ `GITHUB_APP_SLUG`) and every GitHub API call and git clone/push uses a per-installation token instead of `GITHUB_TOKEN`. This is what makes the approve/reject guard above actually work correctly: a shared personal token gives the bot and a human reviewer the same identity, so the "ignore my own comment" check would block that person from ever approving (confirmed live before this existed) -- a GitHub App has a genuinely separate identity (`<slug>[bot]`). It also means adding the tool to a new repo is just installing the App on it, no per-repo webhook to configure (see "New repo, one deployment" below). CI mode keeps using `GITHUB_TOKEN` as-is -- GitHub Actions already provides its own scoped per-run token.
 - **Memory & learning** (`agent/memory_store.py`) — findings are fingerprinted; a 👎 reaction on a bot comment is scanned and recorded as a dismissal on a dedicated `ai-review-memory` git branch (`memory.json`), so the same finding is never reported again, and a per-author `dismiss_counts` profile feeds the `check_author_style` tool.
 - **Conversation mode** (`agent/nodes/conversation.py`) — a reply to one of the bot's own review comments is classified as `question` / `disagreement` / `other`; questions get an explanation, disagreements get acknowledged and recorded as a dismissal.
 - **Semantic memory** (`agent/pinecone_store.py`, optional) — past findings embedded in Pinecone so `search_semantic_memory` can match by meaning, not just keyword; the agent degrades gracefully (skips the tool) if `PINECONE_API_KEY` is unset.
@@ -166,13 +167,27 @@ ngrok http 8000
 cd dashboard && npm install && npm run dev        # http://localhost:3000
 ```
 
+### New repo, one deployment
+
+The service is repo-agnostic (each job carries its own `repo_full_name`), so
+adding another project to an already-running hosted deployment needs no new
+infra or code:
+
+- **With GitHub App auth**: install the App on the new repo (its settings
+  page → Configure → add the repository). That's it — the App's webhook
+  already covers every repo it's installed on.
+- **With a `GITHUB_TOKEN` PAT**: add a webhook on the new repo by hand
+  (same URL/secret/events as step 5 above), and make sure the token has
+  access to it.
+
 ### Environment variables
 
 | Variable | Where | Required | Purpose |
 |---|---|---|---|
 | `OPENAI_API_KEY` | root `.env` | yes | LLM calls |
-| `GITHUB_TOKEN` | root `.env` | yes | PyGithub auth (PR reads, comments, fix PRs) |
-| `GITHUB_WEBHOOK_SECRET` | `service/.env` | yes (hosted) | HMAC verification of inbound webhooks |
+| `GITHUB_TOKEN` | root `.env` | yes, unless using a GitHub App | PyGithub auth (PR reads, comments, fix PRs) |
+| `GITHUB_APP_ID` / `GITHUB_APP_SLUG` / `GITHUB_APP_PRIVATE_KEY` | root `.env` | no (hosted mode alternative to `GITHUB_TOKEN`) | per-installation auth instead of a shared PAT; private key as one line with real newlines escaped to `\n` |
+| `GITHUB_WEBHOOK_SECRET` | `service/.env` | yes (hosted) | HMAC verification of inbound webhooks -- same value goes in the GitHub App's own webhook config (or a plain repo webhook, in PAT mode) |
 | `REDIS_URL` | `service/.env` | yes (hosted) | job queue |
 | `DATABASE_URL` | `service/.env` | yes (hosted) | review history storage |
 | `PINECONE_API_KEY` / `PINECONE_INDEX_NAME` | `.env` | no | enables `search_semantic_memory`; skipped gracefully if unset |
