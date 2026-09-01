@@ -25,6 +25,10 @@ const config: Config = {
           critical: "var(--status-critical)",
         },
       },
+      boxShadow: {
+        card: "var(--shadow-md)",
+        lifted: "var(--shadow-lifted)",
+      },
     },
   },
   plugins: [],

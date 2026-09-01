@@ -8,7 +8,7 @@ import {
 } from "@/lib/api";
 import { RepoSelector } from "@/components/RepoSelector";
 import { ReviewHistoryTable } from "@/components/ReviewHistoryTable";
-import { StatTile } from "@/components/StatTile";
+import { StatTile, type StatTone } from "@/components/StatTile";
 import {
   AvgIcon,
   CostIcon,
@@ -39,12 +39,46 @@ function formatEvalQuality(evalSummary: { sample_count: number; valid_rate: numb
   return formatPercent(evalSummary.valid_rate);
 }
 
+// Lower is better: a review getting dismissed a lot is the one signal on
+// this dashboard that means the bot itself needs attention, not the code.
+function falsePositiveTone(rate: number): StatTone {
+  if (rate < 0.1) return "good";
+  if (rate < 0.25) return "warning";
+  return "critical";
+}
+
+// Higher is better: this is the LLM-judge's read on whether findings are
+// actually valid, sampled from real production reviews.
+function evalQualityTone(sampleCount: number, validRate: number | null): StatTone {
+  if (sampleCount === 0 || validRate === null) return "neutral";
+  if (validRate >= 0.85) return "good";
+  if (validRate >= 0.7) return "warning";
+  return "critical";
+}
+
+// Any review hitting the loop limit means analyze gave up without a clean
+// answer -- rare should stay rare.
+function loopLimitTone(reviewCount: number, hitCount: number): StatTone {
+  if (reviewCount === 0) return "neutral";
+  if (hitCount === 0) return "good";
+  const rate = hitCount / reviewCount;
+  return rate > 0.1 ? "critical" : "warning";
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <h2 className="font-display text-[0.7rem] font-bold tracking-[0.14em] text-ink-muted uppercase">
+      {children}
+    </h2>
+  );
+}
+
 function Header({ repos, repo }: { repos: string[]; repo: string }) {
   return (
-    <header className="border-b border-grid bg-surface">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-5">
+    <header className="sticky top-0 z-10 border-b border-grid bg-surface/90 backdrop-blur-sm">
+      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-series-1 text-white">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-series-1 text-white shadow-sm">
             <svg
               width="18"
               height="18"
@@ -60,8 +94,10 @@ function Header({ repos, repo }: { repos: string[]; repo: string }) {
             </svg>
           </div>
           <div>
-            <h1 className="text-base font-semibold text-ink-primary">AI Code Reviewer</h1>
-            {repo && <p className="text-xs text-ink-muted">{repo}</p>}
+            <h1 className="font-display text-[0.95rem] leading-tight font-bold tracking-tight text-ink-primary">
+              AI Code Reviewer
+            </h1>
+            <p className="text-xs text-ink-muted">{repo || "Automated pull request review"}</p>
           </div>
         </div>
         <RepoSelector repos={repos} initialRepo={repo} />
@@ -124,58 +160,86 @@ export default async function DashboardPage({
       <Header repos={repos} repo={repo} />
       <main className="mx-auto max-w-5xl px-6 py-8">
         {loadError || !history || !stats || !cost || !evalSummary || !latency ? (
-          <div className="rounded-xl border border-border bg-surface p-10 text-center">
+          <div className="rounded-xl border border-border bg-surface p-10 text-center shadow-card">
             <p className="text-sm font-medium text-status-critical">Could not load dashboard data</p>
             <p className="mt-1 text-xs text-ink-muted">{loadError ?? "Unknown error"}</p>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <StatTile label="Reviews" value={String(cost.review_count)} icon={<ReviewsIcon />} />
-              <StatTile
-                label="Total cost"
-                value={formatUsd(cost.total_cost_usd)}
-                icon={<CostIcon />}
-                sparklineValues={history.reviews.map((r) => r.cost_usd).reverse()}
-              />
-              <StatTile label="Avg cost / PR" value={formatUsd(cost.avg_cost_per_pr_usd)} icon={<AvgIcon />} />
-              <StatTile
-                label="False positive rate"
-                value={formatPercent(stats.false_positive_rate)}
-                icon={<FalsePositiveIcon />}
-              />
-              <StatTile
-                label="Eval quality"
-                value={formatEvalQuality(evalSummary)}
-                icon={<EvalQualityIcon />}
-              />
-              <StatTile
-                label="Avg latency"
-                value={formatSeconds(latency.avg_latency_seconds)}
-                icon={<LatencyIcon />}
-                sparklineValues={history.reviews
-                  .map((r) => r.latency_seconds)
-                  .filter((v): v is number => v !== null)
-                  .reverse()}
-              />
-              <StatTile
-                label="Avg iterations"
-                value={latency.avg_iteration_count === null ? "—" : latency.avg_iteration_count.toFixed(1)}
-                icon={<AvgIcon />}
-              />
-              <StatTile
-                label="Hit loop limit"
-                value={
-                  latency.review_count === 0
-                    ? "—"
-                    : `${latency.hit_max_iterations_count} (${formatPercent(latency.hit_max_iterations_rate ?? 0)})`
-                }
-                icon={<LoopLimitIcon />}
-              />
-            </div>
+            <section>
+              <SectionLabel>Activity</SectionLabel>
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <StatTile label="Reviews" value={String(cost.review_count)} icon={<ReviewsIcon />} />
+                <StatTile
+                  label="Total cost"
+                  value={formatUsd(cost.total_cost_usd)}
+                  icon={<CostIcon />}
+                  sparklineValues={history.reviews.map((r) => r.cost_usd).reverse()}
+                />
+                <StatTile
+                  label="Avg cost / PR"
+                  value={formatUsd(cost.avg_cost_per_pr_usd)}
+                  icon={<AvgIcon />}
+                />
+              </div>
+            </section>
+
+            <section className="mt-8">
+              <SectionLabel>Quality</SectionLabel>
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <StatTile
+                  label="False positive rate"
+                  value={formatPercent(stats.false_positive_rate)}
+                  icon={<FalsePositiveIcon />}
+                  tone={falsePositiveTone(stats.false_positive_rate)}
+                  hint={`${stats.dismissed} of ${stats.total} findings dismissed`}
+                />
+                <StatTile
+                  label="Eval quality"
+                  value={formatEvalQuality(evalSummary)}
+                  icon={<EvalQualityIcon />}
+                  tone={evalQualityTone(evalSummary.sample_count, evalSummary.valid_rate)}
+                  hint={
+                    evalSummary.sample_count > 0
+                      ? `LLM-judged, ${evalSummary.sample_count} sample(s)`
+                      : "No samples judged yet"
+                  }
+                />
+              </div>
+            </section>
+
+            <section className="mt-8">
+              <SectionLabel>Performance</SectionLabel>
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <StatTile
+                  label="Avg latency"
+                  value={formatSeconds(latency.avg_latency_seconds)}
+                  icon={<LatencyIcon />}
+                  sparklineValues={history.reviews
+                    .map((r) => r.latency_seconds)
+                    .filter((v): v is number => v !== null)
+                    .reverse()}
+                />
+                <StatTile
+                  label="Avg iterations"
+                  value={latency.avg_iteration_count === null ? "—" : latency.avg_iteration_count.toFixed(1)}
+                  icon={<AvgIcon />}
+                />
+                <StatTile
+                  label="Hit loop limit"
+                  value={
+                    latency.review_count === 0
+                      ? "—"
+                      : `${latency.hit_max_iterations_count} (${formatPercent(latency.hit_max_iterations_rate ?? 0)})`
+                  }
+                  icon={<LoopLimitIcon />}
+                  tone={loopLimitTone(latency.review_count, latency.hit_max_iterations_count)}
+                />
+              </div>
+            </section>
 
             <div className="mt-10 flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold text-ink-primary">Review history</h2>
+              <h2 className="font-display text-sm font-bold text-ink-primary">Review history</h2>
               <span className="text-xs text-ink-muted">
                 {history.reviews.length} review{history.reviews.length === 1 ? "" : "s"}
               </span>

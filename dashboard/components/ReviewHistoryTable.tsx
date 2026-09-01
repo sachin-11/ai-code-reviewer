@@ -43,7 +43,7 @@ function LinkPill({ href, label }: { href: string; label: string }) {
 export function ReviewHistoryTable({ reviews }: { reviews: Review[] }) {
   if (reviews.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-surface p-12 text-center">
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-surface p-12 text-center shadow-card">
         <EmptyStateIcon className="text-ink-muted" />
         <p className="text-sm text-ink-secondary">No reviews recorded yet for this repository.</p>
         <p className="text-xs text-ink-muted">
@@ -54,19 +54,25 @@ export function ReviewHistoryTable({ reviews }: { reviews: Review[] }) {
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-surface">
+    <div className="overflow-x-auto rounded-xl border border-border bg-surface shadow-card">
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-grid text-ink-muted">
-            <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide">PR</th>
-            <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide">Date</th>
-            <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide">Issues found</th>
-            <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide">
+            <th className="font-display px-4 py-3 text-xs font-semibold uppercase tracking-wide">PR</th>
+            <th className="font-display px-4 py-3 text-xs font-semibold uppercase tracking-wide">Date</th>
+            <th className="font-display px-4 py-3 text-xs font-semibold uppercase tracking-wide">
+              Issues found
+            </th>
+            <th className="font-display px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide">
               Verified fixes
             </th>
-            <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide">Cost</th>
-            <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide">Latency</th>
-            <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide">Links</th>
+            <th className="font-display px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide">
+              Cost
+            </th>
+            <th className="font-display px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide">
+              Latency
+            </th>
+            <th className="font-display px-4 py-3 text-xs font-semibold uppercase tracking-wide">Links</th>
           </tr>
         </thead>
         <tbody>
@@ -75,25 +81,27 @@ export function ReviewHistoryTable({ reviews }: { reviews: Review[] }) {
               key={review.id}
               className="border-b border-grid last:border-0 hover:bg-plane/60"
             >
-              <td className="px-4 py-3 font-medium text-ink-primary">#{review.pr_number}</td>
+              <td className="font-mono-data px-4 py-3 font-medium text-ink-primary">
+                #{review.pr_number}
+              </td>
               <td className="px-4 py-3 whitespace-nowrap text-ink-secondary">
                 {formatDate(review.created_at)}
               </td>
               <td className="px-4 py-3">
                 <SeverityBadges breakdown={review.severity_breakdown} />
               </td>
-              <td className="tabular px-4 py-3 text-right text-ink-primary">
+              <td className="font-mono-data tabular px-4 py-3 text-right text-ink-primary">
                 {review.verified_patch_count > 0 ? (
                   <span className="text-status-good">{review.verified_patch_count}</span>
                 ) : (
                   <span className="text-ink-muted">0</span>
                 )}
               </td>
-              <td className="tabular px-4 py-3 text-right text-ink-primary">
+              <td className="font-mono-data tabular px-4 py-3 text-right text-ink-primary">
                 {formatCost(review.cost_usd)}
               </td>
               <td
-                className="tabular px-4 py-3 text-right text-ink-primary"
+                className="font-mono-data tabular px-4 py-3 text-right text-ink-primary"
                 title={nodeLatencyTitle(review.node_latencies)}
               >
                 <div className="flex items-center justify-end gap-1.5">
