@@ -81,6 +81,7 @@ sequenceDiagram
 
 - **Agentic analysis** — GPT-4o tool-calling loop, not a single-shot prompt; see table above.
 - **Verified fixes** — patches are lint/test-checked in a scratch copy before ever being proposed; unverified patches are reported but not opened as a PR.
+- **Approve/reject fix PRs by comment** — a fix PR carries a marker + an approval-prompt comment; replying `approve` or `reject` on that thread (via the `issue_comment` webhook, `agent/nodes/fix_pr_decision.py`) merges or closes it, but only for commenters with write access to the repo (checked via the GitHub API, not assumed). Nothing merges without that explicit approval — the bot never merges on its own. Note: `GITHUB_TOKEN` should belong to a dedicated bot account or GitHub App, not a human reviewer's own personal token — the "ignore my own comments" guard compares the comment author to the token's identity, so a shared token would block that person from ever approving.
 - **Memory & learning** (`agent/memory_store.py`) — findings are fingerprinted; a 👎 reaction on a bot comment is scanned and recorded as a dismissal on a dedicated `ai-review-memory` git branch (`memory.json`), so the same finding is never reported again, and a per-author `dismiss_counts` profile feeds the `check_author_style` tool.
 - **Conversation mode** (`agent/nodes/conversation.py`) — a reply to one of the bot's own review comments is classified as `question` / `disagreement` / `other`; questions get an explanation, disagreements get acknowledged and recorded as a dismissal.
 - **Semantic memory** (`agent/pinecone_store.py`, optional) — past findings embedded in Pinecone so `search_semantic_memory` can match by meaning, not just keyword; the agent degrades gracefully (skips the tool) if `PINECONE_API_KEY` is unset.
@@ -106,7 +107,7 @@ agent/                  the LangGraph agent (shared by both deployment modes)
   fingerprint.py          stable id for an issue (file+category+title) for dismissal tracking
   main.py                 CI-mode entrypoint (reads PR_* env vars, runs one review)
   conversation_main.py    CI-mode entrypoint for the conversation-mode workflow
-  nodes/                  fetch / agentic_analyze / fix / verify / publish / conversation
+  nodes/                  fetch / agentic_analyze / fix / verify / publish / conversation / fix_pr_decision
   tools/                  agent_tools.py (the ReAct tool implementations), detect_lang.py
 
 service/                 hosted deployment: webhook -> queue -> worker -> Postgres -> API
@@ -158,7 +159,7 @@ python -m service.worker
 ngrok http 8000
 # repo Settings -> Webhooks -> Payload URL = https://<ngrok>/webhook/github,
 # content type application/json, secret = GITHUB_WEBHOOK_SECRET, events: pull_request,
-# pull_request_review_comment
+# pull_request_review_comment, issue_comment
 
 # 6. dashboard
 cd dashboard && npm install && npm run dev        # http://localhost:3000
