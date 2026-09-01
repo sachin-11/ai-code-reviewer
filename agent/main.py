@@ -10,7 +10,6 @@ from agent.schemas import AgentState
 load_dotenv()
 
 REQUIRED_ENV_VARS = [
-    "OPENAI_API_KEY",
     "GITHUB_TOKEN",
     "PR_NUMBER",
     "PR_HEAD_SHA",
@@ -24,6 +23,10 @@ REQUIRED_ENV_VARS = [
 
 def _check_env_vars() -> None:
     missing = [name for name in REQUIRED_ENV_VARS if not os.environ.get(name)]
+    # OPENAI_API_KEY isn't needed when routing through Ollama instead (see
+    # agent/llm_client.py) -- either one satisfies this check.
+    if not os.environ.get("OPENAI_API_KEY") and not os.environ.get("OLLAMA_BASE_URL"):
+        missing.append("OPENAI_API_KEY (or OLLAMA_BASE_URL)")
     if missing:
         print(f"Missing required environment variable(s): {', '.join(missing)}", file=sys.stderr)
         sys.exit(1)

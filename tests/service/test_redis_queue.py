@@ -26,12 +26,13 @@ def test_enqueue_applies_job_timeout_and_lands_in_intermediate_queue():
         rjq.enqueue("review_pr", {"pr_number": 1})
 
         q = Queue(DEFAULT_QUEUE_NAME, connection=conn)
-        # RQ 2.x's newer "intermediate" queue is what a worker actually
-        # dequeues from -- Queue.count/job_ids still read the legacy
-        # rq:queue:<name> list, which a fresh enqueue no longer populates,
-        # so checking that key gives a false "queue is empty" reading.
-        intermediate_key = f"{q.key}:intermediate"
-        job_ids = conn.lrange(intermediate_key, 0, -1)
+        # Some RQ 2.x point releases routed a fresh enqueue through a
+        # separate ":intermediate" list instead of the legacy rq:queue:<name>
+        # list a worker reads from Queue.job_ids -- that behavior was since
+        # reverted (verified against the installed rq==2.12.0: enqueue lands
+        # directly in rq:queue:<name> again). Check both so this doesn't
+        # silently break again on the next RQ upgrade either direction.
+        job_ids = conn.lrange(f"{q.key}:intermediate", 0, -1) or conn.lrange(q.key, 0, -1)
         assert len(job_ids) == 1
 
         job = q.fetch_job(job_ids[0].decode())

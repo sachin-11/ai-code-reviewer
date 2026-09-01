@@ -4,11 +4,11 @@ from typing import Optional
 
 from openai import AsyncOpenAI
 
-from agent.llm_client import get_async_openai_client
+from agent.llm_client import get_async_openai_client, resolve_model
 from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Patch, Severity
 
-MODEL = "gpt-4o"
+MODEL = resolve_model("gpt-4o")
 TEMPERATURE = 0.0
 
 MAX_FILE_CHARS = 6000

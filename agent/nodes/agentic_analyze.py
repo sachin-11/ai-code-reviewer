@@ -2,12 +2,12 @@ import json
 
 from agent import github_client, memory_store
 from agent.fingerprint import fingerprint as compute_fingerprint
-from agent.llm_client import get_openai_client
+from agent.llm_client import get_openai_client, resolve_model
 from agent.llm_cost import cost_from_response
 from agent.schemas import AgentState, Issue, Patch
 from agent.tools.agent_tools import TOOL_SCHEMAS, build_tool_dispatch
 
-MODEL = "gpt-4o"
+MODEL = resolve_model("gpt-4o")
 TEMPERATURE = 0.1
 MAX_ITERATIONS = 8
 

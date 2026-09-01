@@ -1,10 +1,10 @@
 import json
 
 from agent import github_client, memory_store
-from agent.llm_client import get_openai_client
+from agent.llm_client import get_openai_client, resolve_model
 from agent.llm_cost import cost_from_response
 
-MODEL = "gpt-4o-mini"
+MODEL = resolve_model("gpt-4o-mini")
 TEMPERATURE = 0.2
 MAX_FILE_CHARS = 4000
 
