@@ -94,6 +94,29 @@ def get_client() -> Github:
     return Github(auth=Auth.Token(token))
 
 
+def list_installed_repos() -> list[str]:
+    # Only meaningful for App auth -- a PAT has no "installations" concept,
+    # it just has whatever access the token owner's account has. Installed
+    # repos show up here the moment the App is added to them, independent
+    # of whether a PR has ever been opened (unlike the dashboard's other
+    # repo list, which is Postgres review history and only grows once a
+    # review has actually run).
+    if not _using_github_app():
+        return []
+
+    try:
+        repos: list[str] = []
+        for installation in _get_integration().get_installations():
+            # Installation.get_repos() (not Github.get_repos()) -- the
+            # latter hits /user/repos, which doesn't resolve against an
+            # installation token and hangs rather than erroring cleanly.
+            repos.extend(repo.full_name for repo in installation.get_repos())
+        return sorted(set(repos))
+    except Exception as exc:
+        logger.error("Failed to list GitHub App installed repos: %s", exc)
+        return []
+
+
 def get_authenticated_login() -> Optional[str]:
     # A GitHub App has no /user identity to query (installation tokens can't
     # call it) -- its comments/commits show up authored by "<slug>[bot]",

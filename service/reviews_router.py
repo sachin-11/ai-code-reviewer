@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Query
 
+from agent import github_client
 from service import reviews_repo
 
 router = APIRouter(prefix="/api/reviews")
@@ -7,7 +8,13 @@ router = APIRouter(prefix="/api/reviews")
 
 @router.get("/repos")
 async def list_repos():
-    return {"repos": reviews_repo.get_known_repos()}
+    # Merge two sources: Postgres review history (repos that have actually
+    # been reviewed at least once) and, when GitHub App auth is configured,
+    # every repo the App is currently installed on -- so a freshly-installed
+    # repo with zero reviews yet still shows up to pick from.
+    reviewed = reviews_repo.get_known_repos()
+    installed = github_client.list_installed_repos()
+    return {"repos": sorted(set(reviewed) | set(installed))}
 
 
 @router.get("")

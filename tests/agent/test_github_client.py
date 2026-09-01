@@ -12,6 +12,7 @@ from agent.github_client import (
     get_git_auth_token,
     has_write_access,
     is_fix_pr,
+    list_installed_repos,
     merge_fix_pr,
     raise_fix_pr,
 )
@@ -212,3 +213,35 @@ def test_installation_token_cache_refetches_when_expired():
     mock_integration.get_repo_installation.assert_called_once_with("org", "repo")
     mock_integration.get_access_token.assert_called_once_with(999)
     github_client._installation_token_cache.clear()
+
+
+def test_list_installed_repos_empty_without_app(monkeypatch):
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("GITHUB_APP_PRIVATE_KEY", raising=False)
+    assert list_installed_repos() == []
+
+
+def test_list_installed_repos_merges_across_installations(monkeypatch):
+    monkeypatch.setenv("GITHUB_APP_ID", "123")
+    monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake-key")
+
+    installation_a = MagicMock()
+    installation_a.get_repos.return_value = [MagicMock(full_name="org/repo-b"), MagicMock(full_name="org/repo-a")]
+    installation_b = MagicMock()
+    installation_b.get_repos.return_value = [MagicMock(full_name="org/repo-a")]  # duplicate, should dedupe
+
+    mock_integration = MagicMock()
+    mock_integration.get_installations.return_value = [installation_a, installation_b]
+
+    with mock_patch("agent.github_client._get_integration", return_value=mock_integration):
+        repos = list_installed_repos()
+
+    assert repos == ["org/repo-a", "org/repo-b"]  # sorted and deduped
+
+
+def test_list_installed_repos_returns_empty_on_api_error(monkeypatch):
+    monkeypatch.setenv("GITHUB_APP_ID", "123")
+    monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake-key")
+
+    with mock_patch("agent.github_client._get_integration", side_effect=RuntimeError("API down")):
+        assert list_installed_repos() == []
